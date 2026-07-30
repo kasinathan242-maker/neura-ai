@@ -1,80 +1,148 @@
-import React, { useEffect } from 'react';
-import { Play, Pause, RotateCcw, X, Timer } from 'lucide-react';
-import { useStore } from '../store/useStore';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown, ChevronUp, Pause, Play, RotateCcw, Timer } from 'lucide-react';
 import clsx from 'clsx';
+import { useStore } from '../store/useStore';
+
+/**
+ * Floating Pomodoro widget.
+ *
+ * The countdown reads from an absolute deadline in the store rather than
+ * decrementing a counter, so it stays accurate when the tab is backgrounded —
+ * browsers throttle `setInterval` in hidden tabs, which made the old
+ * implementation drift by minutes over a session.
+ */
+
+const PRESETS = [
+    { label: '15m', seconds: 900 },
+    { label: '25m', seconds: 1500 },
+    { label: '50m', seconds: 3000 },
+];
+
+const formatTime = (totalSeconds) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
 
 export const FocusTimer = () => {
-    const { focusMode, setFocusState } = useStore();
-    const { isActive, timeLeft, duration } = focusMode;
+    const focus = useStore((s) => s.focus);
+    const startFocus = useStore((s) => s.startFocus);
+    const pauseFocus = useStore((s) => s.pauseFocus);
+    const resetFocus = useStore((s) => s.resetFocus);
+    const tickFocus = useStore((s) => s.tickFocus);
+    const setFocusDuration = useStore((s) => s.setFocusDuration);
+    const enabled = useStore((s) => s.settings.pomodoro);
+
+    const [collapsed, setCollapsed] = useState(false);
 
     useEffect(() => {
-        let interval = null;
-        if (isActive && timeLeft > 0) {
-            interval = setInterval(() => {
-                setFocusState({ timeLeft: timeLeft - 1 });
-            }, 1000);
-        } else if (timeLeft === 0) {
-            setFocusState({ isActive: false });
-            // Optionally play a sound here
-        }
-        return () => clearInterval(interval);
-    }, [isActive, timeLeft, setFocusState]);
+        if (!focus.isRunning) return undefined;
+        const interval = setInterval(tickFocus, 500);
+        // Recompute on tab focus too: while hidden, the interval may not have run
+        // at all, so the displayed time would be stale on return.
+        const onVisible = () => tickFocus();
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [focus.isRunning, tickFocus]);
 
-    const formatTime = (seconds) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
+    if (!enabled) return null;
 
-    const toggleTimer = () => setFocusState({ isActive: !isActive });
-    const resetTimer = () => setFocusState({ isActive: false, timeLeft: duration });
-    const closeTimer = () => setFocusState({ isActive: false }); // Just hiding effectively if we want
+    const percent = focus.duration ? (focus.remaining / focus.duration) * 100 : 0;
 
-    // Always show if setting is enabled (accessed via store ideally, or just show always for now)
-    // if (!isActive && timeLeft === duration) return null;
+    if (collapsed) {
+        return (
+            <button
+                type="button"
+                onClick={() => setCollapsed(false)}
+                className="glass-panel focus-ring fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full px-4 py-2 shadow-xl"
+            >
+                <Timer size={15} className="accent-text" />
+                <span className="text-app tabular text-sm font-semibold">{formatTime(focus.remaining)}</span>
+                <ChevronUp size={14} className="text-app-muted" />
+            </button>
+        );
+    }
 
     return (
-        <div className="fixed bottom-6 right-6 z-50 glass-panel p-4 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-10 flex flex-col items-center gap-3 w-48 border border-white/10 bg-black/80 backdrop-blur-xl">
-            <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-2 text-cyan-400">
-                    <Timer size={16} />
-                    <span className="text-xs font-bold tracking-wider">FOCUS</span>
+        <div className="glass-panel animate-pop fixed bottom-5 right-5 z-40 w-52 rounded-2xl p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+                <div className="accent-text flex items-center gap-1.5">
+                    <Timer size={14} />
+                    <span className="text-[11px] font-bold tracking-widest">FOCUS</span>
                 </div>
-                <button onClick={resetTimer} className="hover:text-red-400 transition-colors">
-                    <X size={14} />
+                <button
+                    type="button"
+                    onClick={() => setCollapsed(true)}
+                    aria-label="Collapse the focus timer"
+                    className="text-app-muted focus-ring hover:text-app transition-colors"
+                >
+                    <ChevronDown size={15} />
                 </button>
             </div>
 
-            <div className="text-4xl font-mono font-bold text-white tabular-nums tracking-tight">
-                {formatTime(timeLeft)}
+            <div className="text-app tabular mb-3 text-center font-mono text-4xl font-bold tracking-tight">
+                {formatTime(focus.remaining)}
             </div>
 
-            <div className="flex items-center gap-2 w-full">
+            <div className="mb-3 flex gap-2">
                 <button
-                    onClick={toggleTimer}
+                    type="button"
+                    onClick={focus.isRunning ? pauseFocus : startFocus}
                     className={clsx(
-                        "flex-1 py-1.5 rounded-lg flex items-center justify-center gap-2 transition-all font-medium text-sm",
-                        isActive ? "bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30" : "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
+                        'focus-ring flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-sm font-medium transition-all',
+                        focus.isRunning
+                            ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+                            : 'accent-bg accent-text hover:brightness-125',
                     )}
                 >
-                    {isActive ? <Pause size={16} /> : <Play size={16} />}
-                    {isActive ? "Pause" : "Start"}
+                    {focus.isRunning ? <Pause size={15} /> : <Play size={15} />}
+                    {focus.isRunning ? 'Pause' : 'Start'}
                 </button>
                 <button
-                    onClick={resetTimer}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                    type="button"
+                    onClick={resetFocus}
+                    aria-label="Reset the timer"
+                    className="border-app text-app-muted hover:text-app focus-ring rounded-lg border p-1.5 transition-colors"
                 >
-                    <RotateCcw size={16} />
+                    <RotateCcw size={15} />
                 </button>
             </div>
 
-            {/* Progress bar */}
-            <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mt-1">
+            <div className="mb-3 flex gap-1">
+                {PRESETS.map((preset) => (
+                    <button
+                        key={preset.seconds}
+                        type="button"
+                        onClick={() => setFocusDuration(preset.seconds)}
+                        className={clsx(
+                            'focus-ring flex-1 rounded-md py-1 text-[11px] font-medium transition-colors',
+                            focus.duration === preset.seconds
+                                ? 'accent-bg accent-text'
+                                : 'text-app-muted hover:text-app',
+                        )}
+                    >
+                        {preset.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--border-subtle)]">
                 <div
-                    className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-1000 ease-linear"
-                    style={{ width: `${(timeLeft / duration) * 100}%` }}
+                    className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-500 ease-linear"
+                    style={{ width: `${percent}%` }}
                 />
             </div>
+
+            {focus.completedSessions > 0 && (
+                <p className="text-app-muted mt-2 text-center text-[11px]">
+                    {focus.completedSessions} session{focus.completedSessions === 1 ? '' : 's'} done today
+                </p>
+            )}
         </div>
     );
 };
+
+export default FocusTimer;

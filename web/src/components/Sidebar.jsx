@@ -1,105 +1,204 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-    Home as HomeIcon, MessageSquare, Mic, BookOpen, FileText, Code,
-    List, CheckSquare, Edit, Settings, Box, Globe
+    Bot,
+    Boxes,
+    Brain,
+    Camera,
+    CheckSquare,
+    Code,
+    Cpu,
+    FileText,
+    Globe,
+    Home as HomeIcon,
+    Layers,
+    MessageSquare,
+    Mic,
+    Notebook,
+    Palette,
+    Settings as SettingsIcon,
+    Sparkles,
+    X,
 } from 'lucide-react';
-import { useStore } from '../store/useStore';
 import clsx from 'clsx';
+import { useStore } from '../store/useStore';
 
-const navItems = [
-    { icon: HomeIcon, label: 'Dashboard', path: '/' },
-    { icon: MessageSquare, label: 'AI Chat', path: '/chat' },
-    { icon: Mic, label: 'Voice', path: '/voice' },
-    { icon: BookOpen, label: 'Study', path: '/study' },
-    { icon: FileText, label: 'PDF Intelligence', path: '/pdf' },
-    { icon: Code, label: 'Coding', path: '/coding' },
-    { icon: List, label: 'Flashcards', path: '/flashcards' },
-    { icon: CheckSquare, label: 'Tasks', path: '/tasks' },
-    { icon: Edit, label: 'Notes', path: '/notes' },
+/**
+ * Navigation. Grouped rather than one flat list, because the app now has 15
+ * destinations and an undifferentiated column of icons is hard to scan.
+ */
+
+const GROUPS = [
+    {
+        label: 'Assist',
+        items: [
+            { icon: HomeIcon, label: 'Dashboard', path: '/' },
+            { icon: MessageSquare, label: 'AI Chat', path: '/chat' },
+            { icon: Mic, label: 'Live Voice', path: '/voice', tag: 'live' },
+            { icon: Camera, label: 'Vision', path: '/vision', tag: 'new' },
+        ],
+    },
+    {
+        label: 'Learn',
+        items: [
+            { icon: Sparkles, label: 'Study', path: '/study' },
+            { icon: Bot, label: 'Study Agents', path: '/agents', tag: 'new' },
+            { icon: Brain, label: 'Memory Graph', path: '/memory', tag: 'new' },
+            { icon: Boxes, label: 'Spatial 3D', path: '/spatial', tag: 'xr' },
+            { icon: Layers, label: 'Flashcards', path: '/flashcards' },
+        ],
+    },
+    {
+        label: 'Work',
+        items: [
+            { icon: FileText, label: 'PDF Intelligence', path: '/pdf' },
+            { icon: Code, label: 'Coding', path: '/coding' },
+            { icon: CheckSquare, label: 'Tasks', path: '/tasks' },
+            { icon: Notebook, label: 'Notes', path: '/notes' },
+        ],
+    },
+    {
+        label: 'System',
+        items: [
+            { icon: Cpu, label: 'Local AI', path: '/local-ai', tag: 'offline' },
+            { icon: SettingsIcon, label: 'Settings', path: '/settings' },
+            { icon: Palette, label: 'Themes', path: '/themes' },
+            { icon: Globe, label: 'Languages', path: '/languages' },
+        ],
+    },
 ];
 
-const secondaryItems = [
-    { icon: Settings, label: 'Settings', path: '/settings' },
-    { icon: Box, label: 'Themes', path: '/themes' },
-    { icon: Globe, label: 'Languages', path: '/languages' },
-];
+const TAG_STYLES = {
+    new: 'bg-emerald-500/15 text-emerald-300',
+    live: 'bg-red-500/15 text-red-300',
+    xr: 'bg-violet-500/15 text-violet-300',
+    offline: 'bg-amber-500/15 text-amber-300',
+};
 
 export const Sidebar = () => {
-    const { isSidebarOpen } = useStore();
+    const isOpen = useStore((s) => s.isSidebarOpen);
+    const toggleSidebar = useStore((s) => s.toggleSidebar);
+    const xp = useStore((s) => s.xp);
+
+    const level = Math.floor(xp / 1000) + 1;
+    const progress = ((xp % 1000) / 1000) * 100;
+
+    const closeOnMobile = () => {
+        // On a phone the sidebar is an overlay, so a tap should dismiss it.
+        if (window.innerWidth < 1024) toggleSidebar();
+    };
 
     return (
-        <aside className={clsx(
-            "h-screen bg-[#0f0f13] border-r border-white/5 transition-all duration-300 flex flex-col fixed left-0 top-0 z-50",
-            isSidebarOpen ? "w-64" : "w-16"
-        )}>
-            {/* Logo Area */}
-            <div className="h-20 flex items-center px-4 border-b border-white/5">
-                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center shrink-0">
-                    <span className="text-white font-bold text-lg">N</span>
-                </div>
-                {isSidebarOpen && <span className="ml-3 font-bold text-lg tracking-wide text-blue-400">NEURA AI</span>}
-            </div>
-
-            {/* User Level */}
-            {isSidebarOpen && (
-                <div className="px-4 py-4">
-                    <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-                        <span>Level 1</span>
-                        <span className="text-blue-400">30 XP</span>
-                    </div>
-                    <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full w-[3%] bg-blue-500 rounded-full" />
-                    </div>
-                </div>
+        <>
+            {/* Scrim behind the mobile overlay. */}
+            {isOpen && (
+                <button
+                    type="button"
+                    aria-label="Close the navigation menu"
+                    onClick={toggleSidebar}
+                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+                />
             )}
 
-            {/* Main Nav */}
-            <nav className="flex-1 px-2 py-2 space-y-1 overflow-y-auto no-scrollbar">
-                {navItems.map((item) => (
-                    <NavLink
-                        key={item.path}
-                        to={item.path}
-                        className={({ isActive }) => clsx(
-                            "flex items-center px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
-                            isActive
-                                ? "bg-blue-500/10 text-cyan-400"
-                                : "text-gray-400 hover:bg-white/5 hover:text-white"
-                        )}
-                    >
-                        {({ isActive }) => (
-                            <>
-                                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan-400 rounded-r-full" />}
-                                <item.icon size={20} strokeWidth={1.5} className={clsx("shrink-0", isActive && "text-cyan-400")} />
-                                {isSidebarOpen && <span className="ml-3 font-medium text-sm truncate">{item.label}</span>}
-                            </>
-                        )}
-                    </NavLink>
-                ))}
+            <aside
+                className={clsx(
+                    'fixed left-0 top-0 z-50 flex h-screen flex-col border-r transition-all duration-300',
+                    'border-app bg-[var(--bg-secondary)]',
+                    isOpen ? 'w-64 translate-x-0' : 'w-64 -translate-x-full lg:w-16 lg:translate-x-0',
+                )}
+            >
+                <div className="border-app flex h-16 shrink-0 items-center border-b px-4">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]">
+                        <span className="text-lg font-bold text-black">N</span>
+                    </div>
+                    {isOpen && (
+                        <>
+                            <span className="accent-text ml-3 text-base font-bold tracking-wide">NEURA AI</span>
+                            <button
+                                type="button"
+                                onClick={toggleSidebar}
+                                aria-label="Close the navigation menu"
+                                className="text-app-muted hover:text-app focus-ring ml-auto lg:hidden"
+                            >
+                                <X size={18} />
+                            </button>
+                        </>
+                    )}
+                </div>
 
-                <div className="my-2 border-t border-white/5 mx-2" />
+                {isOpen && (
+                    <div className="border-app shrink-0 border-b px-4 py-3">
+                        <div className="text-app-muted mb-1.5 flex items-center justify-between text-[11px]">
+                            <span>Level {level}</span>
+                            <span className="accent-text font-semibold">{xp} XP</span>
+                        </div>
+                        <div className="h-1 overflow-hidden rounded-full bg-[var(--border-subtle)]">
+                            <div
+                                className="h-full rounded-full bg-[var(--accent)] transition-all duration-700"
+                                style={{ width: `${Math.max(2, progress)}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
 
-                {secondaryItems.map((item) => (
-                    <NavLink
-                        key={item.path}
-                        to={item.path}
-                        className={({ isActive }) => clsx(
-                            "flex items-center px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
-                            isActive
-                                ? "bg-blue-500/10 text-cyan-400"
-                                : "text-gray-400 hover:bg-white/5 hover:text-white"
-                        )}
-                    >
-                        {({ isActive }) => (
-                            <>
-                                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan-400 rounded-r-full" />}
-                                <item.icon size={20} strokeWidth={1.5} className={clsx("shrink-0", isActive && "text-cyan-400")} />
-                                {isSidebarOpen && <span className="ml-3 font-medium text-sm truncate">{item.label}</span>}
-                            </>
-                        )}
-                    </NavLink>
-                ))}
-            </nav>
-        </aside>
+                <nav className="no-scrollbar flex-1 space-y-4 overflow-y-auto px-2 py-3">
+                    {GROUPS.map((group) => (
+                        <div key={group.label}>
+                            {isOpen && (
+                                <p className="text-app-muted mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest opacity-60">
+                                    {group.label}
+                                </p>
+                            )}
+                            <div className="space-y-0.5">
+                                {group.items.map((item) => (
+                                    <NavLink
+                                        key={item.path}
+                                        to={item.path}
+                                        onClick={closeOnMobile}
+                                        title={isOpen ? undefined : item.label}
+                                        className={({ isActive }) =>
+                                            clsx(
+                                                'focus-ring group relative flex items-center rounded-lg px-3 py-2 transition-all',
+                                                isActive
+                                                    ? 'accent-bg accent-text'
+                                                    : 'text-app-muted hover:bg-[var(--border-subtle)] hover:text-app',
+                                            )
+                                        }
+                                    >
+                                        {({ isActive }) => (
+                                            <>
+                                                {isActive && (
+                                                    <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-[var(--accent)]" />
+                                                )}
+                                                <item.icon size={18} strokeWidth={1.7} className="shrink-0" />
+                                                {isOpen && (
+                                                    <>
+                                                        <span className="ml-3 truncate text-sm font-medium">
+                                                            {item.label}
+                                                        </span>
+                                                        {item.tag && (
+                                                            <span
+                                                                className={clsx(
+                                                                    'ml-auto rounded px-1.5 py-0.5 text-[9px] font-bold uppercase',
+                                                                    TAG_STYLES[item.tag],
+                                                                )}
+                                                            >
+                                                                {item.tag}
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </>
+                                        )}
+                                    </NavLink>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </nav>
+            </aside>
+        </>
     );
 };
+
+export default Sidebar;

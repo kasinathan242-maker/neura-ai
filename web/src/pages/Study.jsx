@@ -1,286 +1,537 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, GraduationCap, RotateCw, Brain, ArrowRight, Loader2, ArrowLeft, Send, CheckCircle, XCircle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    ArrowLeft,
+    Brain,
+    CheckCircle,
+    GraduationCap,
+    Layers,
+    RotateCw,
+    Send,
+    Sparkles,
+    XCircle,
+} from 'lucide-react';
 import clsx from 'clsx';
-import axios from 'axios';
+import {
+    Badge,
+    Button,
+    ErrorNote,
+    Markdown,
+    PageHeader,
+    Panel,
+    Progress,
+    Select,
+    Spinner,
+    TextInput,
+} from '../components/ui';
+import api from '../lib/api';
+import { useStore } from '../store/useStore';
 
-const StudyModeCard = ({ title, desc, icon: Icon, color, onClick }) => (
-    <div onClick={onClick} className="glass-panel p-6 rounded-2xl border border-white/5 bg-[#0e0e12] flex flex-col justify-between group hover:border-blue-500/30 transition-all duration-300 cursor-pointer">
-        <div>
-            <div className={clsx("w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-colors", color)}>
-                <Icon size={24} />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
-            <p className="text-gray-400 text-sm mb-6 leading-relaxed min-h-[40px]">{desc}</p>
-        </div>
-        <button className="flex items-center text-cyan-400 font-medium text-sm group-hover:text-cyan-300 transition-colors">
-            Start Learning <ArrowRight size={16} className="ml-2 transition-transform group-hover:translate-x-1" />
-        </button>
-    </div>
-);
+/**
+ * Three study modes: an explainer, a Socratic tutor, and a quiz.
+ *
+ * Quiz results are posted back as mastery signals, so a low score on a topic
+ * changes how later explanations are pitched — the feedback loop behind the
+ * knowledge graph.
+ */
 
-export const Study = () => {
-    const [activeMode, setActiveMode] = useState(null); // 'study', 'tutor', 'revision'
-    const [loading, setLoading] = useState(false);
+const MODES = [
+    {
+        id: 'learn',
+        title: 'Learn a topic',
+        description: 'A structured explanation, adapted to what you already know.',
+        icon: GraduationCap,
+    },
+    {
+        id: 'tutor',
+        title: 'Socratic tutor',
+        description: 'It asks, you answer. Best for working through something difficult.',
+        icon: Brain,
+    },
+    {
+        id: 'quiz',
+        title: 'Test yourself',
+        description: 'Retrieval practice, weighted towards your weak spots.',
+        icon: Layers,
+    },
+];
 
-    // Study Mode State
-    const [studyTopic, setStudyTopic] = useState('');
+function LearnMode() {
+    const [topic, setTopic] = useState('');
+    const [depth, setDepth] = useState('intermediate');
     const [explanation, setExplanation] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [personalised, setPersonalised] = useState(false);
+    const abortRef = useRef(null);
+    const awardXp = useStore((s) => s.awardXp);
+    const addCards = useStore((s) => s.addCards);
 
-    // Tutor Mode State
-    const [tutorMessages, setTutorMessages] = useState([]);
-    const [tutorInput, setTutorInput] = useState('');
+    useEffect(() => () => abortRef.current?.abort(), []);
 
-    // Revision Mode State
-    const [quizTopic, setQuizTopic] = useState('');
-    const [quizQuestions, setQuizQuestions] = useState([]);
-    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-    const [selectedOption, setSelectedOption] = useState(null);
-    const [score, setScore] = useState(0);
-    const [showResult, setShowResult] = useState(false);
+    const run = async () => {
+        const subject = topic.trim();
+        if (!subject || busy) return;
 
-    // --- Actions ---
+        setBusy(true);
+        setError(null);
+        setExplanation('');
+        setPersonalised(false);
 
-    const handleExplain = async () => {
-        if (!studyTopic.trim()) return;
-        setLoading(true);
-        try {
-            const res = await axios.post('http://localhost:8001/api/study/explain', { topic: studyTopic, depth: "intermediate" });
-            setExplanation(res.data.explanation);
-        } catch (error) {
-            setExplanation("Error getting explanation. Please ensure backend is running.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleTutorSend = async () => {
-        if (!tutorInput.trim()) return;
-        const userMsg = { role: 'user', content: tutorInput };
-        setTutorMessages(prev => [...prev, userMsg]);
-        setTutorInput('');
-        setLoading(true);
+        const controller = new AbortController();
+        abortRef.current = controller;
 
         try {
-            const res = await axios.post('http://localhost:8001/api/study/tutor', {
-                message: userMsg.content,
-                context: tutorMessages
+            const { text, meta } = await api.explainStream(subject, depth, {
+                signal: controller.signal,
+                onDelta: (_, full) => setExplanation(full),
+                onMeta: (event) => {
+                    if (event.type === 'context') setPersonalised(Boolean(event.memory_used));
+                },
             });
-            setTutorMessages(prev => [...prev, { role: 'ai', content: res.data.response }]);
-        } catch (error) {
-            setTutorMessages(prev => [...prev, { role: 'ai', content: "Error connecting to Tutor." }]);
+            if (meta?.error) setError(meta.error);
+            if (text.trim()) awardXp(15, 'topic explained');
+        } catch (err) {
+            if (err?.name !== 'AbortError') setError(err.message);
         } finally {
-            setLoading(false);
+            setBusy(false);
+            abortRef.current = null;
         }
     };
 
-    const handleStartQuiz = async () => {
-        if (!quizTopic.trim()) return;
-        setLoading(true);
-        setScore(0);
-        setCurrentQuestionIndex(0);
-        setShowResult(false);
-        setQuizQuestions([]);
-
-        try {
-            const res = await axios.post('http://localhost:8001/api/study/quiz', { topic: quizTopic });
-            if (res.data.questions && res.data.questions.length > 0) {
-                setQuizQuestions(res.data.questions);
-            } else {
-                alert("Could not generate quiz. Try a different topic.");
-            }
-        } catch (error) {
-            alert("Error starting quiz.");
-        } finally {
-            setLoading(false);
-        }
+    const makeCard = () => {
+        addCards([
+            {
+                question: `Explain ${topic}`,
+                answer: explanation.slice(0, 600),
+                tag: 'Study',
+                type: 'Concept',
+            },
+        ]);
     };
-
-    const handleAnswerQuiz = (option) => {
-        setSelectedOption(option);
-        if (option === quizQuestions[currentQuestionIndex].answer) {
-            setScore(prev => prev + 1);
-        }
-
-        setTimeout(() => {
-            if (currentQuestionIndex < quizQuestions.length - 1) {
-                setCurrentQuestionIndex(prev => prev + 1);
-                setSelectedOption(null);
-            } else {
-                setShowResult(true);
-            }
-        }, 1500);
-    };
-
-    // --- Renderers ---
-
-    const renderStudyMode = () => (
-        <div className="w-full max-w-4xl mx-auto animate-in fade-in">
-            <div className="bg-[#0e0e12] border border-white/10 rounded-2xl p-6 mb-6">
-                <h2 className="text-xl font-bold text-white mb-4">Topic Explanation</h2>
-                <div className="flex gap-4">
-                    <input
-                        value={studyTopic}
-                        onChange={e => setStudyTopic(e.target.value)}
-                        placeholder="Enter a topic (e.g. 'Photosynthesis')"
-                        className="flex-1 bg-[#1a1a1f] border border-white/5 rounded-xl px-4 py-3 text-white focus:border-blue-500 focus:outline-none"
-                        onKeyDown={e => e.key === 'Enter' && handleExplain()}
-                    />
-                    <button onClick={handleExplain} disabled={loading} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium min-w-[100px] flex items-center justify-center">
-                        {loading ? <Loader2 className="animate-spin" /> : "Explain"}
-                    </button>
-                </div>
-            </div>
-            {explanation && (
-                <div className="bg-[#0e0e12] border border-white/10 rounded-2xl p-8 prose prose-invert max-w-none text-gray-300 leading-relaxed whitespace-pre-wrap">
-                    {explanation}
-                </div>
-            )}
-        </div>
-    );
-
-    const renderTutorMode = () => (
-        <div className="w-full max-w-3xl mx-auto h-[600px] flex flex-col bg-[#0e0e12] border border-white/10 rounded-2xl overflow-hidden animate-in fade-in">
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {tutorMessages.length === 0 && (
-                    <div className="text-center text-gray-500 mt-20">
-                        <GraduationCap size={48} className="mx-auto mb-4 opacity-50" />
-                        <p>Hello! I'm your AI Tutor. What subject are we tackling today?</p>
-                    </div>
-                )}
-                {tutorMessages.map((msg, idx) => (
-                    <div key={idx} className={clsx("flex", msg.role === 'user' ? "justify-end" : "justify-start")}>
-                        <div className={clsx("max-w-[80%] p-4 rounded-2xl", msg.role === 'user' ? "bg-purple-600 text-white" : "bg-white/10 text-gray-200")}>
-                            {msg.content}
-                        </div>
-                    </div>
-                ))}
-                {loading && <div className="text-gray-500 text-sm animate-pulse ml-4">Tutor is typing...</div>}
-            </div>
-            <div className="p-4 border-t border-white/10 bg-white/5 flex gap-3">
-                <input
-                    value={tutorInput}
-                    onChange={e => setTutorInput(e.target.value)}
-                    placeholder="Ask your tutor..."
-                    className="flex-1 bg-[#0e0e12] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:outline-none"
-                    onKeyDown={e => e.key === 'Enter' && handleTutorSend()}
-                />
-                <button onClick={handleTutorSend} disabled={loading} className="p-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl">
-                    <Send size={20} />
-                </button>
-            </div>
-        </div>
-    );
-
-    const renderRevisionMode = () => (
-        <div className="w-full max-w-2xl mx-auto animate-in fade-in">
-            {quizQuestions.length === 0 ? (
-                <div className="bg-[#0e0e12] border border-white/10 rounded-2xl p-8 text-center">
-                    <RotateCw size={48} className="mx-auto text-green-500 mb-4" />
-                    <h2 className="text-2xl font-bold text-white mb-2">Revision Quiz</h2>
-                    <p className="text-gray-400 mb-6">Generate a quick quiz to test your knowledge.</p>
-                    <div className="flex gap-3">
-                        <input
-                            value={quizTopic}
-                            onChange={e => setQuizTopic(e.target.value)}
-                            placeholder="Topic (e.g. 'French Revolution')"
-                            className="flex-1 bg-[#1a1a1f] border border-white/5 rounded-xl px-4 py-3 text-white focus:border-green-500 focus:outline-none"
-                            onKeyDown={e => e.key === 'Enter' && handleStartQuiz()}
-                        />
-                        <button onClick={handleStartQuiz} disabled={loading} className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-medium min-w-[120px] flex items-center justify-center">
-                            {loading ? <Loader2 className="animate-spin" /> : "Start Quiz"}
-                        </button>
-                    </div>
-                </div>
-            ) : showResult ? (
-                <div className="text-center bg-[#0e0e12] border border-white/10 rounded-2xl p-12">
-                    <h2 className="text-3xl font-bold text-white mb-4">Quiz Complete!</h2>
-                    <p className="text-xl text-gray-300 mb-8">You scored <span className="text-green-500 font-bold">{score}</span> / {quizQuestions.length}</p>
-                    <button onClick={() => setQuizQuestions([])} className="px-8 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold">
-                        Take Another Quiz
-                    </button>
-                </div>
-            ) : (
-                <div className="bg-[#0e0e12] border border-white/10 rounded-2xl p-8">
-                    <div className="flex justify-between items-center mb-6">
-                        <span className="text-sm text-gray-500">Question {currentQuestionIndex + 1} of {quizQuestions.length}</span>
-                        <span className="text-sm font-bold text-green-500">Score: {score}</span>
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-8">{quizQuestions[currentQuestionIndex].question}</h3>
-                    <div className="space-y-3">
-                        {quizQuestions[currentQuestionIndex].options.map((option, idx) => (
-                            <button
-                                key={idx}
-                                onClick={() => !selectedOption && handleAnswerQuiz(option)}
-                                className={clsx(
-                                    "w-full p-4 rounded-xl text-left transition-all border",
-                                    selectedOption === option
-                                        ? (option === quizQuestions[currentQuestionIndex].answer ? "bg-green-500/20 border-green-500 text-green-300" : "bg-red-500/20 border-red-500 text-red-300")
-                                        : "bg-white/5 border-white/5 hover:bg-white/10 text-gray-300"
-                                )}
-                            >
-                                <div className="flex items-center justify-between">
-                                    {option}
-                                    {selectedOption === option && (
-                                        option === quizQuestions[currentQuestionIndex].answer ? <CheckCircle size={20} /> : <XCircle size={20} />
-                                    )}
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
 
     return (
-        <div className="flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-500 max-w-7xl mx-auto w-full pb-8">
-            <div className="flex items-center gap-4">
-                {activeMode && (
-                    <button onClick={() => setActiveMode(null)} className="p-2 rounded-lg hover:bg-white/10 text-gray-400 transition-colors">
-                        <ArrowLeft size={24} />
-                    </button>
-                )}
-                <div>
-                    <h1 className="text-3xl font-bold text-white mb-1">
-                        {activeMode === 'study' ? 'Deep Dive Study' : activeMode === 'tutor' ? 'AI Tutor' : activeMode === 'revision' ? 'Revision Quiz' : 'Study Center'}
-                    </h1>
-                    <p className="text-gray-400">
-                        {activeMode ? 'Master your subjects with AI assistance' : 'Choose a learning mode and get AI assistance instantly'}
-                    </p>
+        <div className="space-y-4">
+            <Panel className="p-5">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                    <TextInput
+                        value={topic}
+                        onChange={(event) => setTopic(event.target.value)}
+                        onKeyDown={(event) => event.key === 'Enter' && run()}
+                        placeholder="What do you want to understand?"
+                    />
+                    <Select value={depth} onChange={(event) => setDepth(event.target.value)}>
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                    </Select>
+                    <Button icon={Sparkles} onClick={run} loading={busy}>
+                        Explain
+                    </Button>
                 </div>
-            </div>
+            </Panel>
 
-            {!activeMode ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <StudyModeCard
-                        title="Study Mode"
-                        desc="Learn new topics with AI-generated explanations and examples."
-                        icon={BookOpen}
-                        color="bg-blue-500/10 text-blue-500"
-                        onClick={() => setActiveMode('study')}
-                    />
-                    <StudyModeCard
-                        title="Tutor Mode"
-                        desc="Interactive tutoring with adaptive difficulty and personalized guidance."
-                        icon={GraduationCap}
-                        color="bg-purple-500/10 text-purple-500"
-                        onClick={() => setActiveMode('tutor')}
-                    />
-                    <StudyModeCard
-                        title="Revision Mode"
-                        desc="Review and reinforce your knowledge with spaced repetition quizzes."
-                        icon={RotateCw}
-                        color="bg-green-500/10 text-green-500"
-                        onClick={() => setActiveMode('revision')}
-                    />
+            <ErrorNote error={error} onRetry={run} />
+
+            {(explanation || busy) && (
+                <Panel className="p-5">
+                    {personalised && (
+                        <Badge tone="accent" className="mb-3">
+                            <Brain size={11} /> Adapted to your history
+                        </Badge>
+                    )}
+                    {explanation ? (
+                        <Markdown text={explanation} className={busy ? 'stream-caret' : ''} />
+                    ) : (
+                        <Spinner label="Thinking…" />
+                    )}
+                    {explanation && !busy && (
+                        <div className="border-app mt-5 border-t pt-4">
+                            <Button variant="ghost" size="sm" icon={Layers} onClick={makeCard}>
+                                Save as a flashcard
+                            </Button>
+                        </div>
+                    )}
+                </Panel>
+            )}
+        </div>
+    );
+}
+
+function TutorMode() {
+    const [turns, setTurns] = useState([]);
+    const [input, setInput] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const endRef = useRef(null);
+    const awardXp = useStore((s) => s.awardXp);
+
+    useEffect(() => {
+        endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, [turns]);
+
+    const send = async () => {
+        const text = input.trim();
+        if (!text || busy) return;
+
+        const history = turns.map((turn) => ({ role: turn.role, content: turn.content }));
+        setTurns((current) => [...current, { role: 'user', content: text }]);
+        setInput('');
+        setBusy(true);
+        setError(null);
+
+        try {
+            const result = await api.tutor(text, history);
+            setTurns((current) => [
+                ...current,
+                { role: 'assistant', content: result.response, personalised: result.personalised },
+            ]);
+            awardXp(10, 'tutor turn');
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <Panel className="flex h-[60vh] flex-col p-5">
+                <div className="no-scrollbar flex-1 space-y-4 overflow-y-auto">
+                    {turns.length === 0 ? (
+                        <div className="text-app-muted flex h-full flex-col items-center justify-center gap-2 text-center text-sm">
+                            <Brain size={28} className="opacity-30" />
+                            <p className="max-w-sm">
+                                Name what you are stuck on. The tutor leads with questions rather than
+                                answers, so you do the thinking.
+                            </p>
+                        </div>
+                    ) : (
+                        turns.map((turn, index) => (
+                            <div
+                                key={index}
+                                className={clsx('flex', turn.role === 'user' ? 'justify-end' : 'justify-start')}
+                            >
+                                <div
+                                    className={clsx(
+                                        'max-w-[85%] rounded-2xl px-4 py-3 text-sm',
+                                        turn.role === 'user'
+                                            ? 'text-app bg-[var(--border-subtle)]'
+                                            : 'surface-raised',
+                                    )}
+                                >
+                                    {turn.role === 'user' ? (
+                                        turn.content
+                                    ) : (
+                                        <Markdown text={turn.content} />
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                    {busy && <Spinner label="Thinking…" className="py-3" />}
+                    <div ref={endRef} />
                 </div>
+
+                <div className="border-app mt-4 flex gap-2 border-t pt-4">
+                    <TextInput
+                        value={input}
+                        onChange={(event) => setInput(event.target.value)}
+                        onKeyDown={(event) => event.key === 'Enter' && send()}
+                        placeholder="What are you stuck on?"
+                        disabled={busy}
+                    />
+                    <Button icon={Send} onClick={send} loading={busy} disabled={!input.trim()}>
+                        Send
+                    </Button>
+                </div>
+            </Panel>
+
+            <ErrorNote error={error} />
+        </div>
+    );
+}
+
+function QuizMode() {
+    const [topic, setTopic] = useState('');
+    const [count, setCount] = useState(5);
+    const [questions, setQuestions] = useState([]);
+    const [index, setIndex] = useState(0);
+    const [chosen, setChosen] = useState(null);
+    const [score, setScore] = useState(0);
+    const [finished, setFinished] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [targeted, setTargeted] = useState([]);
+    const [saved, setSaved] = useState(false);
+
+    const awardXp = useStore((s) => s.awardXp);
+    const addCards = useStore((s) => s.addCards);
+
+    const start = async () => {
+        const subject = topic.trim();
+        if (!subject || busy) return;
+
+        setBusy(true);
+        setError(null);
+        setQuestions([]);
+        setIndex(0);
+        setScore(0);
+        setChosen(null);
+        setFinished(false);
+        setSaved(false);
+
+        try {
+            const result = await api.quiz(subject, Number(count));
+            if (!result.questions?.length) {
+                setError('No questions came back. Try a more specific topic.');
+                return;
+            }
+            setQuestions(result.questions);
+            setTargeted(result.targeted_weak_concepts || []);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const answer = (option) => {
+        if (chosen !== null) return;
+        setChosen(option);
+        if (option === questions[index].answer) setScore((value) => value + 1);
+    };
+
+    const next = async () => {
+        if (index + 1 < questions.length) {
+            setIndex((value) => value + 1);
+            setChosen(null);
+            return;
+        }
+
+        setFinished(true);
+        awardXp(score * 12, 'quiz');
+        try {
+            // Recorded as a mastery signal so future explanations account for it.
+            await api.quizResult(topic.trim(), score, questions.length);
+            setSaved(true);
+        } catch {
+            // The result is still shown; only the mastery write failed.
+        }
+    };
+
+    const saveWrongAsCards = () => {
+        addCards(
+            questions.map((question) => ({
+                question: question.question,
+                answer: question.answer,
+                tag: topic.slice(0, 20),
+                type: 'Quiz',
+            })),
+        );
+    };
+
+    const reset = () => {
+        setQuestions([]);
+        setFinished(false);
+        setIndex(0);
+        setScore(0);
+        setChosen(null);
+    };
+
+    if (!questions.length) {
+        return (
+            <div className="space-y-4">
+                <Panel className="p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <TextInput
+                            value={topic}
+                            onChange={(event) => setTopic(event.target.value)}
+                            onKeyDown={(event) => event.key === 'Enter' && start()}
+                            placeholder="Quiz me on…"
+                        />
+                        <Select value={count} onChange={(event) => setCount(event.target.value)}>
+                            {[3, 5, 8, 10].map((value) => (
+                                <option key={value} value={value}>
+                                    {value} questions
+                                </option>
+                            ))}
+                        </Select>
+                        <Button icon={Layers} onClick={start} loading={busy}>
+                            Start
+                        </Button>
+                    </div>
+                    {busy && (
+                        <p className="text-app-muted mt-3 text-xs">
+                            Writing questions — this can take a moment on a local model.
+                        </p>
+                    )}
+                </Panel>
+                <ErrorNote error={error} onRetry={start} />
+            </div>
+        );
+    }
+
+    if (finished) {
+        const percent = Math.round((score / questions.length) * 100);
+        return (
+            <Panel className="p-8 text-center">
+                <div
+                    className={clsx(
+                        'mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl',
+                        percent >= 70 ? 'bg-emerald-500/15' : 'bg-amber-500/15',
+                    )}
+                >
+                    {percent >= 70 ? (
+                        <CheckCircle size={30} className="text-emerald-400" />
+                    ) : (
+                        <RotateCw size={30} className="text-amber-400" />
+                    )}
+                </div>
+                <p className="text-app text-3xl font-bold">
+                    {score} / {questions.length}
+                </p>
+                <p className="text-app-muted mt-1 text-sm">
+                    {percent >= 85
+                        ? 'Strong. This topic is holding.'
+                        : percent >= 60
+                          ? 'Reasonable. Worth one more pass over the misses.'
+                          : 'This one needs another session — noted in your graph.'}
+                </p>
+                {saved && (
+                    <p className="text-app-muted mt-3 text-xs">
+                        Recorded against “{topic}” at {percent}% mastery.
+                    </p>
+                )}
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                    <Button icon={RotateCw} onClick={reset}>
+                        New quiz
+                    </Button>
+                    <Button variant="ghost" icon={Layers} onClick={saveWrongAsCards}>
+                        Save all as flashcards
+                    </Button>
+                </div>
+            </Panel>
+        );
+    }
+
+    const question = questions[index];
+
+    return (
+        <div className="space-y-4">
+            {targeted.length > 0 && (
+                <Panel className="accent-bg px-4 py-2">
+                    <p className="text-app-muted text-xs">
+                        <Brain size={11} className="accent-text mr-1 inline" />
+                        Weighted towards your weak areas: {targeted.join(', ')}
+                    </p>
+                </Panel>
+            )}
+
+            <Panel className="p-6">
+                <div className="mb-4 flex items-center justify-between">
+                    <span className="text-app-muted text-xs">
+                        Question {index + 1} of {questions.length}
+                    </span>
+                    <Badge tone="accent">
+                        {score} correct
+                    </Badge>
+                </div>
+                <Progress value={((index + (chosen ? 1 : 0)) / questions.length) * 100} className="mb-6" />
+
+                <p className="text-app mb-5 text-base font-medium">{question.question}</p>
+
+                <div className="space-y-2">
+                    {question.options.map((option) => {
+                        const isChosen = chosen === option;
+                        const isRight = option === question.answer;
+                        return (
+                            <button
+                                key={option}
+                                type="button"
+                                onClick={() => answer(option)}
+                                disabled={chosen !== null}
+                                className={clsx(
+                                    'focus-ring flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm transition-all',
+                                    chosen === null
+                                        ? 'border-app hover:accent-bg border'
+                                        : isRight
+                                          ? 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                                          : isChosen
+                                            ? 'border border-red-500/40 bg-red-500/10 text-red-200'
+                                            : 'border-app text-app-muted border opacity-60',
+                                )}
+                            >
+                                <span className="min-w-0 flex-1">{option}</span>
+                                {chosen !== null && isRight && (
+                                    <CheckCircle size={16} className="shrink-0 text-emerald-400" />
+                                )}
+                                {chosen !== null && isChosen && !isRight && (
+                                    <XCircle size={16} className="shrink-0 text-red-400" />
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {chosen !== null && (
+                    <div className="mt-5">
+                        {question.explanation && (
+                            <p className="text-app-muted mb-4 text-sm">{question.explanation}</p>
+                        )}
+                        <Button onClick={next}>
+                            {index + 1 < questions.length ? 'Next question' : 'See results'}
+                        </Button>
+                    </div>
+                )}
+            </Panel>
+        </div>
+    );
+}
+
+export const Study = () => {
+    const [mode, setMode] = useState(null);
+    const active = MODES.find((item) => item.id === mode);
+
+    return (
+        <div className="animate-fade">
+            <PageHeader
+                title={active ? active.title : 'Study'}
+                subtitle={active ? active.description : 'Learn, be tutored, or test yourself.'}
+                actions={
+                    active && (
+                        <Button variant="ghost" icon={ArrowLeft} onClick={() => setMode(null)}>
+                            All modes
+                        </Button>
+                    )
+                }
+            />
+
+            {!mode ? (
+                <div className="grid gap-4 md:grid-cols-3">
+                    {MODES.map((item) => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setMode(item.id)}
+                            className="surface hover:accent-bg focus-ring rounded-2xl p-6 text-left transition-all"
+                        >
+                            <div className="accent-bg mb-4 flex h-11 w-11 items-center justify-center rounded-xl">
+                                <item.icon size={22} className="accent-text" />
+                            </div>
+                            <h3 className="text-app text-lg font-bold">{item.title}</h3>
+                            <p className="text-app-muted mt-1.5 text-sm">{item.description}</p>
+                        </button>
+                    ))}
+                </div>
+            ) : mode === 'learn' ? (
+                <LearnMode />
+            ) : mode === 'tutor' ? (
+                <TutorMode />
             ) : (
-                <div className="mt-4">
-                    {activeMode === 'study' && renderStudyMode()}
-                    {activeMode === 'tutor' && renderTutorMode()}
-                    {activeMode === 'revision' && renderRevisionMode()}
-                </div>
+                <QuizMode />
             )}
         </div>
     );
 };
+
+export default Study;

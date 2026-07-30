@@ -1,7 +1,12 @@
-fastapi
-uvicorn
-websockets
-pypdf
-python-multipart
-httpx
-pydantic-settings
+# Runtime dependencies for the Vercel Python Function (api/index.py).
+# Kept deliberately small: the whole app becomes one function bundle, and every
+# megabyte here is cold-start latency. Neo4j and vector stores are reached over
+# HTTP rather than via their SDKs for the same reason.
+fastapi==0.118.0
+pydantic==2.11.7
+httpx==0.28.1
+pypdf==6.0.0
+python-multipart==0.0.20
+
+# Local development only -- Vercel supplies its own ASGI server.
+uvicorn[standard]==0.37.0

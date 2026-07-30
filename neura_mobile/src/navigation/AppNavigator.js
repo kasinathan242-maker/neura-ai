@@ -2,7 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
-import { Home, MessageSquare, BookOpen, CheckSquare, Settings } from 'lucide-react-native';
+import { Home, MessageSquare, BookOpen, Camera, CheckSquare, Settings } from 'lucide-react-native';
 
 import HomeScreen from '../screens/HomeScreen';
 import ChatScreen from '../screens/ChatScreen';
@@ -14,6 +14,7 @@ import CodingScreen from '../screens/CodingScreen';
 import VoiceScreen from '../screens/VoiceScreen';
 import FlashcardsScreen from '../screens/FlashcardsScreen';
 import NotesScreen from '../screens/NotesScreen';
+import VisionScreen from '../screens/VisionScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -60,6 +61,13 @@ export default function AppNavigator() {
                     component={ChatScreen}
                     options={{
                         tabBarIcon: ({ color }) => <MessageSquare color={color} size={24} />
+                    }}
+                />
+                <Tab.Screen
+                    name="Vision"
+                    component={VisionScreen}
+                    options={{
+                        tabBarIcon: ({ color }) => <Camera color={color} size={24} />
                     }}
                 />
                 <Tab.Screen

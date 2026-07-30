@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import axios from 'axios';
-import { API_URL } from '../api/config';
+import api from '../api/config';
 import { CheckSquare, Plus, Sparkles } from 'lucide-react-native';
 
 export default function TasksScreen() {
@@ -26,7 +25,7 @@ export default function TasksScreen() {
         if (!aiGoal.trim()) return;
         setPlanning(true);
         try {
-            const res = await axios.post(`${API_URL}/api/tasks/suggest`, { goal: aiGoal });
+            const res = { data: await api.suggestTasks(aiGoal) };
             const suggestions = res.data.suggestions.split('\n').filter(line => line.trim().length > 0);
 
             const newTasks = suggestions.map((s, i) => ({

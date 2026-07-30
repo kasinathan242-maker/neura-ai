@@ -1,134 +1,211 @@
 import React, { useState } from 'react';
-import { Plus, Search, Edit3, Trash2, Save, FileText } from 'lucide-react';
+import { Brain, Notebook, Plus, Save, Trash2, Upload } from 'lucide-react';
 import clsx from 'clsx';
+import {
+    Badge,
+    Button,
+    EmptyState,
+    ErrorNote,
+    PageHeader,
+    Panel,
+    TextArea,
+    TextInput,
+} from '../components/ui';
+import api from '../lib/api';
+import { useStore } from '../store/useStore';
+
+/**
+ * Notes, with a route into long-term memory.
+ *
+ * "Remember this" sends a note through the ingest pipeline, so its concepts join
+ * the knowledge graph and later answers can draw on it.
+ */
 
 export const Notes = () => {
-    const [notes, setNotes] = useState([
-        { id: 1, title: 'Quantum Physics Formulas', content: 'Schrodinger equation: HΨ = EΨ...', date: '2 hours ago', tag: 'Physics' },
-        { id: 2, title: 'React Hooks Summary', content: 'useEffect runs after render. useMemo caches values...', date: 'Yesterday', tag: 'Coding' },
-    ]);
-    const [activeNote, setActiveNote] = useState(null);
-    const [isEditing, setIsEditing] = useState(false);
+    const notes = useStore((s) => s.notes);
+    const saveNote = useStore((s) => s.saveNote);
+    const removeNote = useStore((s) => s.removeNote);
+    const awardXp = useStore((s) => s.awardXp);
+    const notify = useStore((s) => s.notify);
 
-    const handleSave = () => {
-        if (activeNote) {
-            if (notes.find(n => n.id === activeNote.id)) {
-                setNotes(notes.map(n => n.id === activeNote.id ? activeNote : n));
-            } else {
-                setNotes([activeNote, ...notes]);
-            }
-            setIsEditing(false);
+    const [active, setActive] = useState(null);
+    const [title, setTitle] = useState('');
+    const [content, setContent] = useState('');
+    const [remembering, setRemembering] = useState(false);
+    const [error, setError] = useState(null);
+
+    const startNew = () => {
+        setActive({ id: null });
+        setTitle('');
+        setContent('');
+        setError(null);
+    };
+
+    const open = (note) => {
+        setActive(note);
+        setTitle(note.title || '');
+        setContent(note.content || '');
+        setError(null);
+    };
+
+    const persist = () => {
+        if (!title.trim() && !content.trim()) return;
+        saveNote({
+            id: active?.id || undefined,
+            title: title.trim() || 'Untitled',
+            content: content.trim(),
+        });
+        if (!active?.id) awardXp(5, 'note created');
+        setActive(null);
+    };
+
+    const remember = async () => {
+        const body = content.trim();
+        if (!body) return;
+
+        setRemembering(true);
+        setError(null);
+        try {
+            const result = await api.ingestMemory(body, {
+                source: 'notes',
+                title: title.trim() || 'Note',
+            });
+            awardXp(15, 'note remembered');
+            notify(
+                'Added to memory',
+                result.concepts?.length
+                    ? `Concepts: ${result.concepts.join(', ')}`
+                    : `${result.chunks_added} chunk(s) indexed.`,
+            );
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setRemembering(false);
         }
     };
 
-    const createNewNote = () => {
-        const newNote = { id: Date.now(), title: 'Untitled Note', content: '', date: 'Just now', tag: 'General' };
-        setActiveNote(newNote);
-        setIsEditing(true);
-    };
-
     return (
-        <div className="flex h-[calc(100vh-6rem)] animate-in fade-in zoom-in-95 duration-500 gap-6">
+        <div className="animate-fade">
+            <PageHeader
+                title="Notes"
+                subtitle={notes.length ? `${notes.length} saved` : 'Write things down, then make them stick.'}
+                actions={
+                    <Button icon={Plus} onClick={startNew}>
+                        New note
+                    </Button>
+                }
+            />
 
-            {/* Sidebar List */}
-            <div className="w-80 flex flex-col gap-4 shrink-0">
-                <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold text-white">Notes</h1>
-                    <button
-                        onClick={createNewNote}
-                        className="p-2 bg-cyan-500 hover:bg-cyan-400 text-black rounded-lg transition-colors"
-                    >
-                        <Plus size={20} />
-                    </button>
-                </div>
-
-                <div className="relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                    <input
-                        type="text"
-                        placeholder="Search notes..."
-                        className="w-full bg-[#0e0e12] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm text-gray-300 focus:outline-none focus:border-cyan-500/50"
-                    />
-                </div>
-
-                <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-                    {notes.map(note => (
-                        <div
-                            key={note.id}
-                            onClick={() => { setActiveNote(note); setIsEditing(false); }}
-                            className={clsx(
-                                "p-4 rounded-xl cursor-pointer border transition-all",
-                                activeNote?.id === note.id
-                                    ? "bg-cyan-500/10 border-cyan-500/50"
-                                    : "bg-[#0e0e12] border-white/5 hover:border-white/10 hover:bg-white/5"
-                            )}
-                        >
-                            <h3 className={clsx("font-bold mb-1 truncate", activeNote?.id === note.id ? "text-cyan-400" : "text-white")}>{note.title}</h3>
-                            <p className="text-xs text-gray-500 truncate mb-2">{note.content || "No content"}</p>
-                            <div className="flex justify-between items-center text-xs text-gray-600">
-                                <span>{note.date}</span>
-                                <span className="px-1.5 py-0.5 bg-white/5 rounded text-gray-400">{note.tag}</span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Editor Area */}
-            <div className="flex-1 flex flex-col bg-[#0e0e12] rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
-                {activeNote ? (
-                    <>
-                        <div className="flex items-center justify-between p-4 border-b border-white/5 bg-white/[0.02]">
-                            {isEditing ? (
-                                <input
-                                    value={activeNote.title}
-                                    onChange={e => setActiveNote({ ...activeNote, title: e.target.value })}
-                                    className="bg-transparent text-xl font-bold text-white focus:outline-none w-full"
-                                    placeholder="Note Title"
-                                />
-                            ) : (
-                                <h2 className="text-xl font-bold text-white">{activeNote.title}</h2>
-                            )}
-
-                            <div className="flex items-center gap-2">
-                                {isEditing ? (
-                                    <button
-                                        onClick={handleSave}
-                                        className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-black rounded-lg text-sm font-bold transition-colors"
-                                    >
-                                        <Save size={16} /> Save
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => setIsEditing(true)}
-                                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-colors"
-                                    >
-                                        <Edit3 size={16} /> Edit
-                                    </button>
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,300px)_1fr]">
+                <div className="space-y-2">
+                    {notes.length === 0 ? (
+                        <Panel>
+                            <EmptyState icon={Notebook} title="No notes yet">
+                                Notes are stored in this browser. Use “Remember this” to also add one to
+                                NEURA's long-term memory.
+                            </EmptyState>
+                        </Panel>
+                    ) : (
+                        notes.map((note) => (
+                            <Panel
+                                key={note.id}
+                                className={clsx(
+                                    'group cursor-pointer p-4 transition-colors',
+                                    active?.id === note.id ? 'accent-bg' : 'hover:bg-[var(--border-subtle)]',
                                 )}
-                                <button className="p-2 text-gray-500 hover:text-red-400 transition-colors">
-                                    <Trash2 size={18} />
-                                </button>
+                                onClick={() => open(note)}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-app truncate text-sm font-semibold">
+                                            {note.title || 'Untitled'}
+                                        </p>
+                                        <p className="text-app-muted mt-1 line-clamp-2 text-xs">
+                                            {note.content || 'Empty'}
+                                        </p>
+                                        <p className="text-app-muted mt-1.5 text-[10px] opacity-70">
+                                            {new Date(note.updatedAt || note.createdAt).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            removeNote(note.id);
+                                            if (active?.id === note.id) setActive(null);
+                                        }}
+                                        aria-label="Delete note"
+                                        className="text-app-muted focus-ring shrink-0 rounded-lg p-1 opacity-0 transition-all hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            </Panel>
+                        ))
+                    )}
+                </div>
+
+                <div>
+                    {active ? (
+                        <Panel className="p-5">
+                            <TextInput
+                                value={title}
+                                onChange={(event) => setTitle(event.target.value)}
+                                placeholder="Note title"
+                                className="mb-3 text-base font-semibold"
+                            />
+                            <TextArea
+                                value={content}
+                                onChange={(event) => setContent(event.target.value)}
+                                rows={16}
+                                placeholder="Write your note…"
+                                className="mb-4 font-mono text-[13px]"
+                            />
+
+                            <ErrorNote error={error} className="mb-4" />
+
+                            <div className="flex flex-wrap gap-2">
+                                <Button icon={Save} onClick={persist} disabled={!title.trim() && !content.trim()}>
+                                    Save
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    icon={Brain}
+                                    onClick={remember}
+                                    loading={remembering}
+                                    disabled={!content.trim()}
+                                >
+                                    Remember this
+                                </Button>
+                                <Button variant="ghost" onClick={() => setActive(null)}>
+                                    Cancel
+                                </Button>
                             </div>
-                        </div>
-                        <textarea
-                            value={activeNote.content}
-                            readOnly={!isEditing}
-                            onChange={e => setActiveNote({ ...activeNote, content: e.target.value })}
-                            placeholder="Start typing your note here..."
-                            className={clsx(
-                                "flex-1 w-full bg-transparent p-6 text-gray-300 focus:outline-none resize-none leading-relaxed",
-                                !isEditing && "cursor-default"
-                            )}
-                        />
-                    </>
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-                        <FileText size={48} className="mb-4 opacity-50" />
-                        <p className="text-lg">Select a note or create a new one</p>
-                    </div>
-                )}
+
+                            <p className="text-app-muted mt-3 text-xs">
+                                <Upload size={11} className="mr-1 inline" />
+                                “Remember this” indexes the note so future answers can draw on it.
+                            </p>
+                        </Panel>
+                    ) : (
+                        <Panel>
+                            <EmptyState
+                                icon={Notebook}
+                                title="Select a note"
+                                action={
+                                    <Button icon={Plus} onClick={startNew}>
+                                        New note
+                                    </Button>
+                                }
+                            >
+                                Pick a note from the list, or start a new one.
+                            </EmptyState>
+                        </Panel>
+                    )}
+                </div>
             </div>
         </div>
     );
 };
+
+export default Notes;

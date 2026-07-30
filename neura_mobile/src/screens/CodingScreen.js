@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import axios from 'axios';
-import { API_URL } from '../api/config';
+import api from '../api/config';
 import { Code, Bug, Zap, RefreshCw } from 'lucide-react-native';
 
 export default function CodingScreen() {
@@ -14,14 +13,12 @@ export default function CodingScreen() {
         if (!code.trim()) return;
         setLoading(true);
         try {
-            const res = await axios.post(`${API_URL}/api/analyze-code`, {
-                code,
-                action, // explain, bugfix, optimize, convert
-                details: action === 'convert' ? 'python' : ''
-            });
-            setResult(res.data.result);
+            // The response field is `analysis`; reading `result` here always
+            // produced undefined and rendered a blank panel.
+            const data = await api.analyzeCode(code, action, 'JavaScript', 'Python');
+            setResult(data.analysis);
         } catch (error) {
-            setResult("Error processing code.");
+            setResult(error.message);
         } finally {
             setLoading(false);
         }

@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
-import axios from 'axios';
-import { API_URL } from '../api/config';
+import api from '../api/config';
 import { Upload, FileText, Send } from 'lucide-react-native';
 import { GiftedChat } from 'react-native-gifted-chat';
 
@@ -33,26 +32,19 @@ export default function PdfScreen() {
 
     const uploadPdf = async (file) => {
         setUploading(true);
-        const formData = new FormData();
-        formData.append('file', {
-            uri: file.uri,
-            name: file.name,
-            type: 'application/pdf'
-        });
-
         try {
-            const res = await axios.post(`${API_URL}/api/upload-pdf`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            setPdfId(res.data.pdf_id);
+            // The response field is `doc_id`; the old code read `pdf_id`, so the
+            // follow-up questions were always sent without a document in scope.
+            const data = await api.uploadPdf(file.uri, file.name);
+            setPdfId(data.doc_id);
             setMessages([{
                 _id: 1,
-                text: `PDF "${file.name}" processed! Ask me questions about it.`,
+                text: `Indexed "${file.name}" (${data.pages} page${data.pages === 1 ? '' : 's'}). Ask me anything about it.`,
                 createdAt: new Date(),
                 user: { _id: 2, name: 'NEURA', avatar: 'https://ui-avatars.com/api/?name=AI' }
             }]);
         } catch (error) {
-            alert('Upload failed');
+            alert(error.message);
         } finally {
             setUploading(false);
         }
@@ -64,20 +56,17 @@ export default function PdfScreen() {
         setTyping(true);
 
         try {
-            const res = await axios.post(`${API_URL}/api/chat-pdf`, {
-                pdf_id: pdfId,
-                question: text
-            });
+            const data = await api.chatPdf(text, pdfId);
 
             const aiMsg = {
                 _id: Math.random(),
-                text: res.data.answer,
+                text: data.answer,
                 createdAt: new Date(),
                 user: { _id: 2, name: 'NEURA', avatar: 'https://ui-avatars.com/api/?name=AI' }
             };
             setMessages(prev => GiftedChat.append(prev, [aiMsg]));
         } catch (error) {
-            alert('Failed to get answer');
+            alert(error.message);
         } finally {
             setTyping(false);
         }

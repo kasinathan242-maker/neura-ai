@@ -1,148 +1,287 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Mic, Sparkles, CircleHelp, BookOpen, Clock, Zap } from 'lucide-react';
-import { useStore } from '../store/useStore';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Boxes,
+    Brain,
+    Camera,
+    CircleHelp,
+    Clock,
+    Cpu,
+    Eraser,
+    Mic,
+    Send,
+    Sparkles,
+    Square,
+    Zap,
+} from 'lucide-react';
 import clsx from 'clsx';
+import { Badge, Button, Markdown, Panel } from '../components/ui';
+import { useStore } from '../store/useStore';
+
+/**
+ * Streaming chat.
+ *
+ * Answers arrive token by token over SSE and are rendered as markdown. When
+ * personalised memory contributes to a reply, the concepts it drew on are shown
+ * beneath it — the tailoring is visible rather than mysterious.
+ */
+
+const SUGGESTIONS = [
+    { icon: CircleHelp, text: 'Explain quantum entanglement in simple terms' },
+    { icon: Brain, text: 'Help me understand calculus derivatives' },
+    { icon: Clock, text: 'Create a study plan for my finals' },
+    { icon: Zap, text: 'Summarise the key ideas of machine learning' },
+];
 
 export const Chat = () => {
-    const { messages, addMessage, isTyping, sendMessage, isConnected } = useStore();
-    const [input, setInput] = useState('');
-    const messagesEndRef = useRef(null);
+    const navigate = useNavigate();
+    const messages = useStore((s) => s.messages);
+    const isTyping = useStore((s) => s.isTyping);
+    const sendMessage = useStore((s) => s.sendMessage);
+    const stopGeneration = useStore((s) => s.stopGeneration);
+    const clearMessages = useStore((s) => s.clearMessages);
+    const memoryContext = useStore((s) => s.lastMemoryContext);
+    const health = useStore((s) => s.health);
+    const edge = useStore((s) => s.edge);
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
+    const [input, setInput] = useState('');
+    const endRef = useRef(null);
+    const inputRef = useRef(null);
 
     useEffect(() => {
-        scrollToBottom();
+        endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, [messages, isTyping]);
 
-    const handleSend = (e) => {
-        e.preventDefault();
-        if (!input.trim()) return;
-
-        // Optimistic update
-        addMessage({ role: 'user', content: input });
-
-        // Send via WebSocket
-        if (isConnected) {
-            sendMessage(input);
-        } else {
-            // Fallback if truly offline
-            setTimeout(() => {
-                addMessage({ role: 'ai', content: "I'm having trouble connecting to the server. Please check if the backend is running." });
-            }, 500);
-        }
-
+    const submit = (event) => {
+        event?.preventDefault();
+        const text = input.trim();
+        if (!text || isTyping) return;
         setInput('');
+        sendMessage(text);
+        inputRef.current?.focus();
     };
 
-    const suggestions = [
-        { icon: CircleHelp, text: 'Explain quantum computing in simple terms' },
-        { icon: BookOpen, text: 'Help me understand calculus derivatives' },
-        { icon: Clock, text: 'Create a study plan for my exams' },
-        { icon: Zap, text: 'Summarize the key points of machine learning' },
-    ];
+    const conversation = messages.filter((m) => m.id !== 'init' || messages.length === 1);
+    const provider = health?.active_provider;
+    const providerLabel =
+        edge.status === 'ready' && useStore.getState().settings.edgeMode === 'always'
+            ? 'On-device model'
+            : provider === 'openai'
+              ? health?.cloud_model
+              : provider === 'ollama'
+                ? `Ollama · ${health?.active_model}`
+                : provider === 'offline'
+                  ? 'No model configured'
+                  : '…';
 
     return (
-        <div className="flex flex-col h-[calc(100vh-6rem)] animate-in fade-in zoom-in-95 duration-500 max-w-5xl mx-auto w-full relative">
-
-            {/* Header Area */}
-            <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-[#0a0a0f] to-transparent pb-10 pt-2 px-4">
-                <div className="flex items-center gap-2 mb-1">
-                    <h1 className="text-2xl font-bold text-white">AI Chat</h1>
-                    <div className={clsx("w-2 h-2 rounded-full", isConnected ? "bg-green-500" : "bg-red-500")} title={isConnected ? "Online" : "Offline"} />
+        <div className="animate-fade mx-auto flex h-[calc(100vh-9rem)] w-full max-w-4xl flex-col">
+            <div className="mb-4 flex items-end justify-between gap-3">
+                <div>
+                    <h1 className="text-app text-2xl font-bold tracking-tight">AI Chat</h1>
+                    <p className="text-app-muted mt-0.5 text-xs">{providerLabel}</p>
                 </div>
-                <p className="text-sm text-gray-500">Powered by Gemini 2.5 Flash (via Ollama)</p>
+                <div className="flex items-center gap-2">
+                    {memoryContext?.used && (
+                        <Badge tone="accent">
+                            <Brain size={11} /> personalised
+                        </Badge>
+                    )}
+                    {messages.length > 1 && (
+                        <Button variant="ghost" size="sm" icon={Eraser} onClick={clearMessages}>
+                            Clear
+                        </Button>
+                    )}
+                </div>
             </div>
 
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto no-scrollbar pt-20 pb-4 px-4 scroll-smooth">
-                {messages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center -mt-20">
-                        <div className="w-20 h-20 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center mb-8 shadow-lg shadow-blue-500/20">
-                            <span className="text-4xl font-bold text-white">N</span>
+            <div className="no-scrollbar flex-1 overflow-y-auto pb-4">
+                {conversation.length <= 1 ? (
+                    <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+                        <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--accent)]">
+                            <span className="text-3xl font-bold text-black">N</span>
                         </div>
-                        <h2 className="text-2xl font-bold text-white mb-2">How can I help you today?</h2>
-                        <p className="text-gray-400 max-w-md mb-12">Ask me anything about your studies, coding problems, or let me help you organize your learning.</p>
+                        <h2 className="text-app text-xl font-bold">How can I help you today?</h2>
+                        <p className="text-app-muted mt-2 max-w-md text-sm">
+                            Ask a question, or reach for one of the specialised tools below.
+                        </p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
-                            {suggestions.map((suggestion, i) => (
+                        <div className="mt-8 grid w-full max-w-2xl gap-2.5 sm:grid-cols-2">
+                            {SUGGESTIONS.map((suggestion) => (
                                 <button
-                                    key={i}
-                                    onClick={() => setInput(suggestion.text)}
-                                    className="p-4 bg-[#0e0e12] border border-white/5 hover:border-blue-500/50 hover:bg-white/5 rounded-xl text-left transition-all group flex items-start gap-4"
+                                    key={suggestion.text}
+                                    type="button"
+                                    onClick={() => {
+                                        setInput(suggestion.text);
+                                        inputRef.current?.focus();
+                                    }}
+                                    className="surface hover:accent-bg focus-ring flex items-start gap-3 rounded-xl p-3.5 text-left transition-all"
                                 >
-                                    <suggestion.icon size={20} className="text-blue-500 mt-0.5 group-hover:text-cyan-400 transition-colors" />
-                                    <span className="text-gray-300 text-sm group-hover:text-white">{suggestion.text}</span>
+                                    <suggestion.icon size={17} className="accent-text mt-0.5 shrink-0" />
+                                    <span className="text-app-muted text-sm">{suggestion.text}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="mt-6 flex flex-wrap justify-center gap-2">
+                            {[
+                                { icon: Camera, label: 'Show it a photo', path: '/vision' },
+                                { icon: Mic, label: 'Talk out loud', path: '/voice' },
+                                { icon: Boxes, label: 'See it in 3D', path: '/spatial' },
+                                { icon: Cpu, label: 'Run it offline', path: '/local-ai' },
+                            ].map((item) => (
+                                <button
+                                    key={item.path}
+                                    type="button"
+                                    onClick={() => navigate(item.path)}
+                                    className="border-app text-app-muted hover:accent-text focus-ring flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors"
+                                >
+                                    <item.icon size={13} /> {item.label}
                                 </button>
                             ))}
                         </div>
                     </div>
                 ) : (
-                    <div className="space-y-6 max-w-3xl mx-auto pb-4">
-                        {messages.map((msg, i) => (
-                            <div key={i} className={clsx(
-                                "flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300",
-                                msg.role === 'user' ? "flex-row-reverse" : "flex-row"
-                            )}>
-                                <div className={clsx(
-                                    "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1",
-                                    msg.role === 'user' ? "bg-white/10" : "bg-blue-600"
-                                )}>
-                                    {msg.role === 'user' ? <div className="w-2 h-2 bg-white rounded-full" /> : <Sparkles size={14} className="text-white" />}
+                    <div className="space-y-5">
+                        {conversation.map((message) => (
+                            <div
+                                key={message.id}
+                                className={clsx(
+                                    'animate-rise flex gap-3',
+                                    message.role === 'user' ? 'flex-row-reverse' : 'flex-row',
+                                )}
+                            >
+                                <div
+                                    className={clsx(
+                                        'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                                        message.role === 'user'
+                                            ? 'bg-[var(--border-subtle)]'
+                                            : 'bg-[var(--accent)]',
+                                    )}
+                                >
+                                    {message.role === 'user' ? (
+                                        <span className="text-app text-xs font-semibold">You</span>
+                                    ) : (
+                                        <Sparkles size={14} className="text-black" />
+                                    )}
                                 </div>
-                                <div className={clsx(
-                                    "p-4 rounded-2xl max-w-[80%] text-sm leading-relaxed",
-                                    msg.role === 'user'
-                                        ? "bg-white/10 text-white rounded-tr-sm"
-                                        : "bg-[#0e0e12] border border-white/5 text-gray-200 rounded-tl-sm shadow-md"
-                                )}>
-                                    {msg.content}
+
+                                <div className="min-w-0 max-w-[85%]">
+                                    <div
+                                        className={clsx(
+                                            'rounded-2xl px-4 py-3 text-sm',
+                                            message.role === 'user'
+                                                ? 'text-app bg-[var(--border-subtle)]'
+                                                : message.error
+                                                  ? 'border border-red-500/30 bg-red-500/5'
+                                                  : 'surface',
+                                        )}
+                                    >
+                                        {message.role === 'user' ? (
+                                            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                                        ) : (
+                                            <Markdown
+                                                text={
+                                                    message.content ||
+                                                    (message.streaming ? '' : '(empty response)')
+                                                }
+                                                className={message.streaming ? 'stream-caret' : ''}
+                                            />
+                                        )}
+                                    </div>
+
+                                    {message.role === 'ai' && !message.streaming && (
+                                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                            {message.source === 'on-device' && (
+                                                <Badge tone="warn">
+                                                    <Cpu size={10} /> on-device
+                                                    {message.fallback ? ' fallback' : ''}
+                                                </Badge>
+                                            )}
+                                            {message.degraded && <Badge tone="warn">no model configured</Badge>}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
-                        {isTyping && (
-                            <div className="flex gap-4">
-                                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center shrink-0 mt-1">
-                                    <Sparkles size={14} className="text-white bg-blue-600 animate-pulse" />
+
+                        {isTyping && !conversation.some((m) => m.streaming) && (
+                            <div className="flex gap-3">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]">
+                                    <Sparkles size={14} className="text-black" />
                                 </div>
-                                <div className="bg-[#0e0e12] border border-white/5 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1">
-                                    <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                    <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                    <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                <div className="surface flex items-center gap-1 rounded-2xl px-4 py-3.5">
+                                    {[0, 150, 300].map((delay) => (
+                                        <span
+                                            key={delay}
+                                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--text-secondary)]"
+                                            style={{ animationDelay: `${delay}ms` }}
+                                        />
+                                    ))}
                                 </div>
                             </div>
                         )}
-                        <div ref={messagesEndRef} className="h-4" /> {/* Spacer */}
+
+                        <div ref={endRef} className="h-2" />
                     </div>
                 )}
             </div>
 
-            {/* Input Area */}
-            <div className="max-w-3xl mx-auto w-full relative px-4 pb-4">
-                <form onSubmit={handleSend} className="relative z-20">
-                    <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Ask NEURA anything..."
-                        className="w-full bg-[#0e0e12] border border-white/10 focus:border-blue-500/50 rounded-2xl py-4 pl-12 pr-14 text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 transition-all shadow-lg"
-                    />
-                    <button type="button" className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors">
-                        <Mic size={20} />
-                    </button>
+            {memoryContext?.used && memoryContext.weak?.length > 0 && (
+                <Panel className="accent-bg mb-3 px-4 py-2">
+                    <p className="text-app-muted text-xs">
+                        <Brain size={11} className="accent-text mr-1 inline" />
+                        Adapting to your weak areas: {memoryContext.weak.slice(0, 4).join(', ')}
+                    </p>
+                </Panel>
+            )}
+
+            <form onSubmit={submit} className="relative">
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    placeholder="Ask NEURA anything…"
+                    aria-label="Message"
+                    className="surface text-app placeholder:text-app-muted focus-ring w-full rounded-2xl py-3.5 pl-4 pr-24 text-sm transition-colors focus:border-[var(--accent)]"
+                />
+                <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
                     <button
-                        type="submit"
-                        disabled={!input.trim()}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl disabled:opacity-50 disabled:bg-white/10 transition-all shadow-lg shadow-blue-900/20"
+                        type="button"
+                        onClick={() => navigate('/voice')}
+                        aria-label="Switch to voice"
+                        className="text-app-muted hover:accent-text focus-ring rounded-lg p-2 transition-colors"
                     >
-                        <Send size={18} fill="currentColor" />
+                        <Mic size={17} />
                     </button>
-                </form>
-                <div className="text-center mt-2 text-xs text-gray-600">
-                    NEURA AI can make mistakes. Verify important information.
+                    {isTyping ? (
+                        <button
+                            type="button"
+                            onClick={stopGeneration}
+                            aria-label="Stop generating"
+                            className="focus-ring rounded-xl bg-red-500/15 p-2 text-red-400 transition-colors hover:bg-red-500/25"
+                        >
+                            <Square size={16} />
+                        </button>
+                    ) : (
+                        <button
+                            type="submit"
+                            disabled={!input.trim()}
+                            aria-label="Send message"
+                            className="focus-ring rounded-xl bg-[var(--accent)] p-2 text-black transition-all hover:brightness-110 disabled:bg-[var(--border-strong)] disabled:text-[var(--text-secondary)]"
+                        >
+                            <Send size={16} />
+                        </button>
+                    )}
                 </div>
-            </div>
+            </form>
+
+            <p className="text-app-muted mt-2 text-center text-[11px]">
+                NEURA can make mistakes. Verify anything important.
+            </p>
         </div>
     );
 };
+
+export default Chat;

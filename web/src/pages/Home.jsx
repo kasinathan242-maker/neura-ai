@@ -1,122 +1,384 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Clock, Zap, Star, Award, ArrowRight,
-    MessageSquare, BookOpen, List, CheckSquare,
-    FileText
+    ArrowRight,
+    Award,
+    Bot,
+    Boxes,
+    Brain,
+    Camera,
+    CheckSquare,
+    Clock,
+    Cpu,
+    FileText,
+    Layers,
+    MessageSquare,
+    Mic,
+    Notebook,
+    Sparkles,
+    Star,
+    TrendingDown,
+    Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { Badge, Button, Panel, Progress } from '../components/ui';
+import api from '../lib/api';
+import { useStore } from '../store/useStore';
+
+/**
+ * Dashboard.
+ *
+ * Every number here is real — read from the store or the API. The original
+ * version hardcoded "0h 0m", "30 XP" and "Level 1" regardless of what the user
+ * had actually done.
+ */
+
+const FEATURES = [
+    {
+        title: 'Study Agents',
+        description: 'Name an exam. A crew researches it and builds your schedule.',
+        icon: Bot,
+        path: '/agents',
+        tag: 'agentic',
+    },
+    {
+        title: 'Vision',
+        description: 'Point your camera at a problem and hear it solved.',
+        icon: Camera,
+        path: '/vision',
+        tag: 'multimodal',
+    },
+    {
+        title: 'Live Voice',
+        description: 'Talk, interrupt, be understood. Speech starts in about a second.',
+        icon: Mic,
+        path: '/voice',
+        tag: 'realtime',
+    },
+    {
+        title: 'Spatial 3D',
+        description: 'Generated diagrams you can orbit — or step into in AR.',
+        icon: Boxes,
+        path: '/spatial',
+        tag: 'webxr',
+    },
+    {
+        title: 'Memory Graph',
+        description: 'A map of what you know, and what keeps slipping.',
+        icon: Brain,
+        path: '/memory',
+        tag: 'rag',
+    },
+    {
+        title: 'Local AI',
+        description: 'Run a model on your own GPU. Works on a plane.',
+        icon: Cpu,
+        path: '/local-ai',
+        tag: 'offline',
+    },
+];
+
+const formatDuration = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+};
 
 export const Home = () => {
     const navigate = useNavigate();
+    const xp = useStore((s) => s.xp);
+    const studySeconds = useStore((s) => s.studySeconds);
+    const tasks = useStore((s) => s.tasks);
+    const notes = useStore((s) => s.notes);
+    const cards = useStore((s) => s.cards);
+    const focus = useStore((s) => s.focus);
+    const health = useStore((s) => s.health);
+
+    const [weak, setWeak] = useState([]);
+    const [jobs, setJobs] = useState([]);
+
+    useEffect(() => {
+        // Both are enhancements to the dashboard; a failure just hides the panel.
+        api.weakConcepts(5)
+            .then((result) => setWeak(result.concepts || []))
+            .catch(() => {});
+        api.listJobs()
+            .then((result) => setJobs((result.jobs || []).slice(0, 3)))
+            .catch(() => {});
+    }, []);
+
+    const level = Math.floor(xp / 1000) + 1;
+    const xpIntoLevel = xp % 1000;
+    const openTasks = tasks.filter((task) => !task.done);
+    const doneTasks = tasks.length - openTasks.length;
+
+    const stats = [
+        {
+            label: 'Study time',
+            value: formatDuration(studySeconds),
+            icon: Clock,
+            colour: 'text-cyan-400',
+        },
+        {
+            label: 'Focus sessions',
+            value: focus.completedSessions,
+            icon: Zap,
+            colour: 'text-orange-400',
+        },
+        { label: 'XP earned', value: xp, icon: Star, colour: 'text-violet-400' },
+        { label: 'Level', value: level, icon: Award, colour: 'text-pink-400' },
+    ];
 
     return (
-        <div className="flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-500 pb-8">
-            {/* Header Section */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="animate-fade space-y-8 pb-6">
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
                 <div>
-                    <h1 className="text-3xl font-bold text-white mb-2">Welcome back to <span className="text-blue-400">NEURA AI</span></h1>
-                    <p className="text-gray-400">Your AI-powered study companion is ready to help.</p>
+                    <h1 className="text-app text-2xl font-bold tracking-tight sm:text-3xl">
+                        Welcome back to <span className="accent-text">NEURA AI</span>
+                    </h1>
+                    <p className="text-app-muted mt-1 text-sm">
+                        {health?.active_provider === 'offline'
+                            ? 'No language model is configured yet — set one up in Settings to unlock full answers.'
+                            : 'Your agentic, multimodal study companion is ready.'}
+                    </p>
                 </div>
-                <button
-                    onClick={() => navigate('/study')}
-                    className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium rounded-xl shadow-lg shadow-blue-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-                >
-                    <Award size={18} /> Start Learning
-                </button>
+                <Button icon={Sparkles} onClick={() => navigate('/agents')}>
+                    Plan an exam
+                </Button>
             </div>
 
-            {/* Stats Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {[
-                    { label: 'Study Time', value: '0h 0m', icon: Clock, color: 'text-cyan-400', bg: 'bg-cyan-400/10' },
-                    { label: 'Day Streak', value: '0', icon: Zap, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-                    { label: 'XP Earned', value: '30', icon: Star, color: 'text-purple-400', bg: 'bg-purple-400/10' },
-                    { label: 'Level', value: '1', icon: Award, color: 'text-pink-500', bg: 'bg-pink-500/10' },
-                ].map((stat, i) => (
-                    <div key={i} className="glass-panel p-5 rounded-2xl border border-white/5 bg-[#0e0e12] flex items-center gap-4">
-                        <div className={clsx("w-12 h-12 rounded-xl flex items-center justify-center shrink-0", stat.bg)}>
-                            <stat.icon size={24} className={stat.color} />
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {stats.map((stat) => (
+                    <Panel key={stat.label} className="flex items-center gap-3 p-4">
+                        <div className="accent-bg flex h-11 w-11 shrink-0 items-center justify-center rounded-xl">
+                            <stat.icon size={20} className={stat.colour} />
                         </div>
-                        <div>
-                            <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">{stat.label}</p>
-                            <p className="text-2xl font-bold text-white font-mono">{stat.value}</p>
+                        <div className="min-w-0">
+                            <p className="text-app-muted truncate text-[11px] font-medium uppercase tracking-wider">
+                                {stat.label}
+                            </p>
+                            <p className="text-app tabular text-xl font-bold">{stat.value}</p>
                         </div>
-                    </div>
+                    </Panel>
                 ))}
             </div>
 
-            {/* Level Progress */}
-            <div className="glass-panel p-6 rounded-2xl border border-white/5 bg-[#0e0e12]">
-                <div className="flex justify-between items-end mb-2">
+            <Panel className="p-5">
+                <div className="mb-2 flex items-end justify-between">
                     <div>
-                        <h3 className="text-lg font-bold text-white">Level 1 Progress</h3>
-                        <p className="text-sm text-gray-500">970 XP to next level</p>
+                        <h3 className="text-app font-bold">Level {level}</h3>
+                        <p className="text-app-muted text-xs">{1000 - xpIntoLevel} XP to the next level</p>
                     </div>
-                    <div className="flex items-center gap-1 text-purple-400 font-bold">
-                        <Star size={16} fill="currentColor" /> 30 XP
-                    </div>
+                    <span className="accent-text flex items-center gap-1 text-sm font-bold">
+                        <Star size={14} fill="currentColor" /> {xp} XP
+                    </span>
                 </div>
-                <div className="h-2.5 bg-white/5 rounded-full overflow-hidden w-full">
-                    <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 w-[3%] rounded-full shadow-[0_0_10px_rgba(168,85,247,0.4)]" />
-                </div>
-            </div>
+                <Progress value={(xpIntoLevel / 1000) * 100} />
+            </Panel>
 
-            {/* Quick Actions */}
             <div>
-                <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[
-                        { title: 'Start AI Chat', desc: 'Ask anything', icon: MessageSquare, color: 'text-cyan-400', path: '/chat', button: 'Open' },
-                        { title: 'Study Mode', desc: 'Learn & practice', icon: BookOpen, color: 'text-blue-500', path: '/study', button: 'Open' },
-                        { title: 'Flashcards', desc: '0 cards', icon: List, color: 'text-purple-400', path: '/flashcards', button: 'Open' },
-                        { title: 'Tasks', desc: '0/0 done', icon: CheckSquare, color: 'text-pink-500', path: '/tasks', button: 'Open' },
-                    ].map((action, i) => (
-                        <div key={i} className="glass-panel p-5 rounded-2xl border border-white/5 bg-[#0e0e12] flex flex-col hover:bg-white/5 transition-colors group">
-                            <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                                <action.icon size={20} className={action.color} />
+                <h3 className="text-app mb-4 font-bold">What is new</h3>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {FEATURES.map((feature) => (
+                        <button
+                            key={feature.path}
+                            type="button"
+                            onClick={() => navigate(feature.path)}
+                            className="surface hover:accent-bg focus-ring group rounded-2xl p-5 text-left transition-all"
+                        >
+                            <div className="mb-3 flex items-center justify-between">
+                                <div className="accent-bg flex h-10 w-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110">
+                                    <feature.icon size={19} className="accent-text" />
+                                </div>
+                                <Badge>{feature.tag}</Badge>
                             </div>
-                            <h4 className="font-bold text-white mb-1">{action.title}</h4>
-                            <p className="text-sm text-gray-500 mb-6">{action.desc}</p>
-                            <button
-                                onClick={() => navigate(action.path)}
-                                className={clsx("mt-auto text-sm font-medium flex items-center gap-1 transition-colors", action.color)}
-                            >
-                                {action.button} <ArrowRight size={14} />
-                            </button>
-                        </div>
+                            <h4 className="text-app font-bold">{feature.title}</h4>
+                            <p className="text-app-muted mt-1 text-sm">{feature.description}</p>
+                            <span className="accent-text mt-3 flex items-center gap-1 text-xs font-medium">
+                                Open <ArrowRight size={12} className="transition-transform group-hover:translate-x-1" />
+                            </span>
+                        </button>
                     ))}
                 </div>
             </div>
 
-            {/* Bottom Row: Recent Notes & Pending Tasks */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Recent Notes */}
-                <div className="glass-panel p-6 rounded-2xl border border-white/5 bg-[#0e0e12] min-h-[200px] flex flex-col">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-bold text-white">Recent Notes</h3>
-                        <button onClick={() => navigate('/notes')} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">View all</button>
+            {weak.length > 0 && (
+                <Panel className="border-amber-500/25 p-5">
+                    <div className="mb-3 flex items-center justify-between">
+                        <h3 className="text-app flex items-center gap-2 font-bold">
+                            <TrendingDown size={16} className="text-amber-400" />
+                            Needs another pass
+                        </h3>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/memory')}
+                            className="accent-text focus-ring text-xs underline"
+                        >
+                            View graph
+                        </button>
                     </div>
+                    <div className="space-y-2">
+                        {weak.map((concept) => (
+                            <div key={concept.key} className="flex items-center gap-3">
+                                <span className="text-app min-w-0 flex-1 truncate text-sm">
+                                    {concept.name}
+                                </span>
+                                <div className="w-24 shrink-0">
+                                    <Progress value={(concept.mastery ?? 0) * 100} />
+                                </div>
+                                <span className="text-app-muted tabular w-9 shrink-0 text-right text-xs">
+                                    {Math.round((concept.mastery ?? 0) * 100)}%
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="text-app-muted mt-3 text-xs">
+                        Explanations across the app already account for these.
+                    </p>
+                </Panel>
+            )}
 
-                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50">
-                        <FileText size={32} className="text-gray-600 mb-2" />
-                        <p className="text-sm text-gray-500">No notes yet. Start taking notes!</p>
+            <div className="grid gap-6 lg:grid-cols-3">
+                <Panel className="p-5">
+                    <div className="mb-4 flex items-center justify-between">
+                        <h3 className="text-app font-bold">Open tasks</h3>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/tasks')}
+                            className="accent-text focus-ring text-xs underline"
+                        >
+                            All tasks
+                        </button>
                     </div>
-                </div>
+                    {openTasks.length === 0 ? (
+                        <div className="text-app-muted flex flex-col items-center py-6 text-center">
+                            <CheckSquare size={26} className="mb-2 opacity-30" />
+                            <p className="text-sm">
+                                {tasks.length ? 'Everything done. Nice.' : 'No tasks yet.'}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {openTasks.slice(0, 5).map((task) => (
+                                <div key={task.id} className="flex items-start gap-2">
+                                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
+                                    <p className="text-app-muted min-w-0 flex-1 text-sm">{task.text}</p>
+                                </div>
+                            ))}
+                            {doneTasks > 0 && (
+                                <p className="text-app-muted border-app mt-3 border-t pt-2 text-xs">
+                                    {doneTasks} completed
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </Panel>
 
-                {/* Pending Tasks */}
-                <div className="glass-panel p-6 rounded-2xl border border-white/5 bg-[#0e0e12] min-h-[200px] flex flex-col">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-bold text-white">Pending Tasks</h3>
-                        <button onClick={() => navigate('/tasks')} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">View all</button>
+                <Panel className="p-5">
+                    <div className="mb-4 flex items-center justify-between">
+                        <h3 className="text-app font-bold">Recent notes</h3>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/notes')}
+                            className="accent-text focus-ring text-xs underline"
+                        >
+                            All notes
+                        </button>
                     </div>
+                    {notes.length === 0 ? (
+                        <div className="text-app-muted flex flex-col items-center py-6 text-center">
+                            <Notebook size={26} className="mb-2 opacity-30" />
+                            <p className="text-sm">No notes yet.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {notes.slice(0, 4).map((note) => (
+                                <button
+                                    key={note.id}
+                                    type="button"
+                                    onClick={() => navigate('/notes')}
+                                    className="focus-ring w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--border-subtle)]"
+                                >
+                                    <p className="text-app truncate text-sm font-medium">
+                                        {note.title || 'Untitled'}
+                                    </p>
+                                    <p className="text-app-muted truncate text-xs">{note.content}</p>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </Panel>
 
-                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50">
-                        <CheckSquare size={32} className="text-gray-600 mb-2" />
-                        <p className="text-sm text-gray-500">All tasks completed! Great work!</p>
+                <Panel className="p-5">
+                    <div className="mb-4 flex items-center justify-between">
+                        <h3 className="text-app font-bold">Active plans</h3>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/agents')}
+                            className="accent-text focus-ring text-xs underline"
+                        >
+                            All plans
+                        </button>
                     </div>
+                    {jobs.length === 0 ? (
+                        <div className="text-app-muted flex flex-col items-center py-6 text-center">
+                            <Bot size={26} className="mb-2 opacity-30" />
+                            <p className="text-sm">No study plans yet.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2.5">
+                            {jobs.map((job) => (
+                                <button
+                                    key={job.id}
+                                    type="button"
+                                    onClick={() => navigate('/agents')}
+                                    className="focus-ring w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--border-subtle)]"
+                                >
+                                    <p className="text-app truncate text-sm font-medium">{job.goal}</p>
+                                    <div className="mt-1 flex items-center gap-2">
+                                        <Progress
+                                            value={(job.progress.completed / Math.max(1, job.progress.total)) * 100}
+                                            className="flex-1"
+                                        />
+                                        <span
+                                            className={clsx(
+                                                'text-[10px] font-medium',
+                                                job.status === 'done' ? 'text-emerald-400' : 'accent-text',
+                                            )}
+                                        >
+                                            {job.status}
+                                        </span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </Panel>
+            </div>
+
+            <div>
+                <h3 className="text-app mb-4 font-bold">Jump to</h3>
+                <div className="flex flex-wrap gap-2">
+                    {[
+                        { icon: MessageSquare, label: 'Chat', path: '/chat' },
+                        { icon: Sparkles, label: 'Study', path: '/study' },
+                        { icon: FileText, label: 'PDF', path: '/pdf' },
+                        { icon: Layers, label: `Flashcards (${cards.length})`, path: '/flashcards' },
+                    ].map((item) => (
+                        <button
+                            key={item.path}
+                            type="button"
+                            onClick={() => navigate(item.path)}
+                            className="surface hover:accent-bg focus-ring flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm transition-colors"
+                        >
+                            <item.icon size={15} className="accent-text" />
+                            <span className="text-app">{item.label}</span>
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>
     );
 };
+
+export default Home;

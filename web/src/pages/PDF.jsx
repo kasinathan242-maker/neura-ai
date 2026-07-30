@@ -1,166 +1,324 @@
-import React, { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { Upload, FileText, File, Send, Loader2, Bot, User } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Brain, FileText, Send, Sparkles, Trash2, Upload } from 'lucide-react';
 import clsx from 'clsx';
-import axios from 'axios';
+import {
+    Badge,
+    Button,
+    EmptyState,
+    ErrorNote,
+    Markdown,
+    PageHeader,
+    Panel,
+    Spinner,
+    TextInput,
+} from '../components/ui';
+import api from '../lib/api';
+import { useStore } from '../store/useStore';
+
+/**
+ * Upload a PDF and interrogate it.
+ *
+ * The server chunks and embeds the text on upload, then retrieves the passages
+ * most relevant to each question. The previous version truncated to the first
+ * 15,000 characters, which meant any answer past the opening pages was
+ * unreachable.
+ */
+
+const MAX_MB = 12;
+
+const SUGGESTED = [
+    'Summarise this document in ten bullet points',
+    'What are the key definitions I should memorise?',
+    'Write five exam questions from this material',
+    'Explain the hardest concept here simply',
+];
 
 export const PDF = () => {
-    const [activeFile, setActiveFile] = useState(null); // { filename, stats }
+    const [document, setDocument] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
-    const [sending, setSending] = useState(false);
+    const [asking, setAsking] = useState(false);
+    const [error, setError] = useState(null);
+    const [dragging, setDragging] = useState(false);
 
-    const onDrop = useCallback(async (acceptedFiles) => {
-        const file = acceptedFiles[0];
-        if (!file) return;
+    const fileRef = useRef(null);
+    const endRef = useRef(null);
+    const awardXp = useStore((s) => s.awardXp);
 
-        setUploading(true);
-        const formData = new FormData();
-        formData.append('file', file);
+    useEffect(() => {
+        endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, [messages, asking]);
 
-        try {
-            const res = await axios.post('http://localhost:8001/api/upload-pdf', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            setActiveFile(res.data);
-            setMessages([{ role: 'ai', content: `Analyzed **${res.data.filename}**. You can now ask questions about it!` }]);
-        } catch (error) {
-            console.error(error);
-            alert("Failed to upload PDF");
-        } finally {
-            setUploading(false);
-        }
-    }, []);
+    const upload = useCallback(
+        async (file) => {
+            if (!file) return;
 
-    const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept: { 'application/pdf': ['.pdf'] } });
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                setError('That is not a PDF file.');
+                return;
+            }
+            if (file.size > MAX_MB * 1024 * 1024) {
+                setError(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB; the limit is ${MAX_MB}MB.`);
+                return;
+            }
 
-    const handleSend = async () => {
-        if (!input.trim() || !activeFile) return;
+            setUploading(true);
+            setError(null);
+            setMessages([]);
 
-        const userMsg = input;
+            try {
+                const result = await api.uploadPdf(file);
+                setDocument(result);
+                awardXp(20, 'pdf uploaded');
+                if (result.concepts?.length) {
+                    setMessages([
+                        {
+                            role: 'system',
+                            content:
+                                `Indexed **${result.filename}** — ${result.pages} page` +
+                                `${result.pages === 1 ? '' : 's'}, ${result.char_count.toLocaleString()} characters.\n\n` +
+                                `Concepts added to your knowledge graph: ${result.concepts.join(', ')}`,
+                        },
+                    ]);
+                }
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setUploading(false);
+            }
+        },
+        [awardXp],
+    );
+
+    const ask = async (question = input) => {
+        const text = question.trim();
+        if (!text || asking) return;
+
+        setMessages((current) => [...current, { role: 'user', content: text }]);
         setInput('');
-        setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-        setSending(true);
+        setAsking(true);
+        setError(null);
 
         try {
-            const res = await axios.post('http://localhost:8001/api/chat-pdf', {
-                question: userMsg,
-                filename: activeFile.filename
-            });
-            setMessages(prev => [...prev, { role: 'ai', content: res.data.answer }]);
-        } catch (error) {
-            setMessages(prev => [...prev, { role: 'ai', content: "Error getting response." }]);
+            const result = await api.chatPdf(text, document?.doc_id);
+            setMessages((current) => [
+                ...current,
+                {
+                    role: 'assistant',
+                    content: result.answer,
+                    grounded: result.context_used,
+                    retrieval: result.retrieval,
+                    chunks: result.chunks_used,
+                    note: result.note,
+                },
+            ]);
+            awardXp(8, 'pdf question');
+        } catch (err) {
+            setError(err.message);
         } finally {
-            setSending(false);
+            setAsking(false);
         }
     };
 
+    const onDrop = (event) => {
+        event.preventDefault();
+        setDragging(false);
+        upload(event.dataTransfer.files?.[0]);
+    };
+
     return (
-        <div className="flex flex-col gap-6 animate-in fade-in zoom-in-95 duration-500 max-w-6xl mx-auto w-full pb-8 h-[calc(100vh-6rem)]">
-            <div>
-                <h1 className="text-3xl font-bold text-white mb-2">PDF Intelligence</h1>
-                <p className="text-gray-400">Upload and chat with your documents</p>
-            </div>
+        <div className="animate-fade">
+            <PageHeader
+                title="PDF Intelligence"
+                subtitle="Ask questions about a document and get answers grounded in its text."
+                badge={
+                    document && (
+                        <Badge tone="accent">
+                            <FileText size={11} /> {document.pages} pages indexed
+                        </Badge>
+                    )
+                }
+                actions={
+                    document && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={Trash2}
+                            onClick={() => {
+                                setDocument(null);
+                                setMessages([]);
+                            }}
+                        >
+                            Close document
+                        </Button>
+                    )
+                }
+            />
 
-            {!activeFile ? (
-                <div className="flex-1 flex flex-col items-center justify-center p-8">
-                    <div
-                        {...getRootProps()}
-                        className={clsx(
-                            "w-full max-w-3xl h-96 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center transition-all duration-300 cursor-pointer relative",
-                            isDragActive
-                                ? "border-cyan-500 bg-cyan-500/10"
-                                : "border-white/10 bg-[#0e0e12] hover:border-white/20 hover:bg-white/5"
-                        )}
-                    >
-                        <input {...getInputProps()} />
-                        {uploading ? (
-                            <div className="flex flex-col items-center gap-4">
-                                <Loader2 size={48} className="animate-spin text-cyan-500" />
-                                <p className="text-white font-medium">Analyzing Document...</p>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="w-20 h-20 bg-cyan-500/10 rounded-2xl flex items-center justify-center mb-6">
-                                    <Upload size={40} className="text-cyan-500" />
-                                </div>
-                                <h3 className="text-xl font-bold text-white mb-2">Drop your PDF here</h3>
-                                <p className="text-gray-500 mb-8">or click to browse files</p>
-                                <button className="px-6 py-2.5 rounded-xl border border-cyan-500 text-cyan-400 font-medium hover:bg-cyan-500 hover:text-white transition-all flex items-center gap-2">
-                                    <FileText size={18} /> Select PDF
-                                </button>
-                            </>
-                        )}
-                    </div>
-                </div>
+            <ErrorNote error={error} className="mb-6" />
+
+            {!document ? (
+                <Panel
+                    className={clsx(
+                        'border-2 border-dashed transition-colors',
+                        dragging ? 'border-[var(--accent)]' : 'border-app',
+                    )}
+                    onDragOver={(event) => {
+                        event.preventDefault();
+                        setDragging(true);
+                    }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={onDrop}
+                >
+                    {uploading ? (
+                        <Spinner label="Extracting and indexing the text…" className="py-20" />
+                    ) : (
+                        <EmptyState
+                            icon={Upload}
+                            title="Drop a PDF here"
+                            action={
+                                <>
+                                    <Button icon={Upload} onClick={() => fileRef.current?.click()}>
+                                        Choose a file
+                                    </Button>
+                                    <input
+                                        ref={fileRef}
+                                        type="file"
+                                        accept="application/pdf,.pdf"
+                                        className="hidden"
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            event.target.value = '';
+                                            upload(file);
+                                        }}
+                                    />
+                                </>
+                            }
+                        >
+                            Lecture notes, papers, textbook chapters — up to {MAX_MB}MB. The text is chunked
+                            and embedded so answers can come from anywhere in the document, and the concepts
+                            join your knowledge graph.
+                        </EmptyState>
+                    )}
+                </Panel>
             ) : (
-                <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
-                    {/* Sidebar / Info */}
-                    <div className="lg:col-span-1 bg-[#0e0e12] rounded-2xl border border-white/10 p-6 flex flex-col gap-6">
-                        <div className="flex items-center gap-4 p-4 bg-cyan-500/10 rounded-xl border border-cyan-500/20">
-                            <File className="text-cyan-400" size={32} />
-                            <div className="overflow-hidden">
-                                <h3 className="font-bold text-white truncate" title={activeFile.filename}>{activeFile.filename}</h3>
-                                <p className="text-xs text-gray-400">{(activeFile.char_count / 1000).toFixed(1)}k chars</p>
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,300px)_1fr]">
+                    <div className="space-y-4">
+                        <Panel className="p-5">
+                            <div className="accent-bg mb-3 flex h-10 w-10 items-center justify-center rounded-xl">
+                                <FileText size={20} className="accent-text" />
                             </div>
-                        </div>
-                        <div className="flex-1 overflow-auto rounded-xl bg-white/5 p-4 text-xs text-gray-500 font-mono">
-                            {activeFile.preview}
-                        </div>
-                        <button onClick={() => setActiveFile(null)} className="w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-colors">
-                            Upload Another
-                        </button>
-                    </div>
-
-                    {/* Chat Area */}
-                    <div className="lg:col-span-2 bg-[#0e0e12] rounded-2xl border border-white/10 flex flex-col overflow-hidden">
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-                            {messages.map((msg, i) => (
-                                <div key={i} className={clsx("flex gap-4", msg.role === 'user' ? "flex-row-reverse" : "flex-row")}>
-                                    <div className={clsx(
-                                        "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                                        msg.role === 'user' ? "bg-cyan-500 text-black" : "bg-purple-500 text-white"
-                                    )}>
-                                        {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-                                    </div>
-                                    <div className={clsx(
-                                        "p-4 rounded-2xl max-w-[80%] text-sm leading-relaxed",
-                                        msg.role === 'user' ? "bg-cyan-500/10 text-cyan-100 rounded-tr-none" : "bg-white/5 text-gray-300 rounded-tl-none"
-                                    )}>
-                                        {msg.content}
-                                    </div>
-                                </div>
-                            ))}
-                            {sending && (
-                                <div className="flex gap-4">
-                                    <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center shrink-0">
-                                        <Bot size={16} className="text-white" />
-                                    </div>
-                                    <div className="bg-white/5 p-4 rounded-2xl rounded-tl-none flex items-center gap-2 text-gray-400">
-                                        <Loader2 size={16} className="animate-spin" /> Thinking...
-                                    </div>
-                                </div>
+                            <p className="text-app truncate text-sm font-semibold" title={document.filename}>
+                                {document.filename}
+                            </p>
+                            <p className="text-app-muted mt-1 text-xs">
+                                {document.pages} page{document.pages === 1 ? '' : 's'} ·{' '}
+                                {document.char_count.toLocaleString()} characters
+                            </p>
+                            {document.preview && (
+                                <p className="text-app-muted border-app mt-3 border-t pt-3 text-xs italic">
+                                    {document.preview}
+                                </p>
                             )}
+                        </Panel>
+
+                        <Panel className="p-4">
+                            <p className="text-app-muted mb-2 text-xs font-semibold uppercase tracking-wider">
+                                Try asking
+                            </p>
+                            <div className="space-y-1.5">
+                                {SUGGESTED.map((suggestion) => (
+                                    <button
+                                        key={suggestion}
+                                        type="button"
+                                        onClick={() => ask(suggestion)}
+                                        disabled={asking}
+                                        className="text-app-muted hover:accent-text focus-ring w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors disabled:opacity-40"
+                                    >
+                                        {suggestion}
+                                    </button>
+                                ))}
+                            </div>
+                        </Panel>
+                    </div>
+
+                    <Panel className="flex h-[65vh] flex-col p-5">
+                        <div className="no-scrollbar flex-1 space-y-4 overflow-y-auto">
+                            {messages.length === 0 ? (
+                                <div className="text-app-muted flex h-full flex-col items-center justify-center gap-2 text-center text-sm">
+                                    <Sparkles size={26} className="opacity-30" />
+                                    <p>Ask anything about this document.</p>
+                                </div>
+                            ) : (
+                                messages.map((message, index) => (
+                                    <div
+                                        key={index}
+                                        className={clsx(
+                                            'flex',
+                                            message.role === 'user' ? 'justify-end' : 'justify-start',
+                                        )}
+                                    >
+                                        <div
+                                            className={clsx(
+                                                'max-w-[88%] rounded-2xl px-4 py-3 text-sm',
+                                                message.role === 'user'
+                                                    ? 'text-app bg-[var(--border-subtle)]'
+                                                    : message.role === 'system'
+                                                      ? 'accent-bg'
+                                                      : 'surface-raised',
+                                            )}
+                                        >
+                                            {message.role === 'user' ? (
+                                                message.content
+                                            ) : (
+                                                <Markdown text={message.content} />
+                                            )}
+
+                                            {message.role === 'assistant' && (
+                                                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                                                    {message.grounded ? (
+                                                        <Badge tone="good">
+                                                            <Brain size={10} />
+                                                            {message.retrieval === 'vector'
+                                                                ? `${message.chunks} passages retrieved`
+                                                                : 'from the document'}
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge tone="warn">general knowledge</Badge>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {message.note && (
+                                                <p className="text-app-muted mt-1.5 text-[11px]">
+                                                    {message.note}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            {asking && <Spinner label="Reading the document…" className="py-3" />}
+                            <div ref={endRef} />
                         </div>
 
-                        <div className="p-4 border-t border-white/5 bg-[#1a1a1f]">
-                            <div className="flex items-center gap-2 bg-[#0e0e12] border border-white/10 rounded-xl px-4 py-2 focus-within:border-cyan-500/50 transition-colors">
-                                <input
-                                    className="flex-1 bg-transparent border-none outline-none text-white h-10 placeholder:text-gray-600"
-                                    placeholder="Ask about your PDF..."
-                                    value={input}
-                                    onChange={e => setInput(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && handleSend()}
-                                />
-                                <button onClick={handleSend} disabled={sending} className="p-2 bg-cyan-500 hover:bg-cyan-400 text-black rounded-lg transition-colors disabled:opacity-50">
-                                    <Send size={18} />
-                                </button>
-                            </div>
+                        <div className="border-app mt-4 flex gap-2 border-t pt-4">
+                            <TextInput
+                                value={input}
+                                onChange={(event) => setInput(event.target.value)}
+                                onKeyDown={(event) => event.key === 'Enter' && ask()}
+                                placeholder="Ask about this document…"
+                                disabled={asking}
+                            />
+                            <Button icon={Send} onClick={() => ask()} loading={asking} disabled={!input.trim()}>
+                                Ask
+                            </Button>
                         </div>
-                    </div>
+                    </Panel>
                 </div>
             )}
         </div>
     );
 };
+
+export default PDF;

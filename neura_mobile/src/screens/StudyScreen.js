@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import axios from 'axios';
-import { API_URL } from '../api/config';
+import api from '../api/config';
 
 export default function StudyScreen() {
     const [topic, setTopic] = useState('');
@@ -13,7 +12,7 @@ export default function StudyScreen() {
         if (!topic.trim()) return;
         setLoading(true);
         try {
-            const res = await axios.post(`${API_URL}/api/study/explain`, { topic, depth: "intermediate" });
+            const res = { data: await api.explain(topic, "intermediate") };
             setExplanation(res.data.explanation);
         } catch (error) {
             console.error(error);
