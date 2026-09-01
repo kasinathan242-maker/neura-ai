@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+web/node_modules/
+neura_mobile/node_modules/
+mobile/
+docs/
+.git/
