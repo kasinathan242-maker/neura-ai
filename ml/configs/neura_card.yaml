@@ -1,0 +1,35 @@
+model:
+  name: "neura-card-1.5b-v1"
+  base_checkpoint: "Qwen/Qwen2.5-1.5B-Instruct"
+  license: "Apache-2.0"
+
+grammar:
+  type: "GBNF"
+  enforce_strict_json: true
+  schema:
+    type: "object"
+    properties:
+      question: {"type": "string"}
+      answer: {"type": "string"}
+      options: {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "string"}}
+      difficulty: {"type": "string", "enum": ["easy", "medium", "hard"]}
+    required: ["question", "answer", "options", "difficulty"]
+
+dataset:
+  train_path: "ml/data/processed/cards_train.jsonl"
+  sources:
+    - name: "arc_challenge_reasoning"
+      license: "CC-BY-SA-4.0"
+    - name: "mmlu_stem_engineering"
+      license: "MIT"
+
+training:
+  method: "LoRA"
+  lora_r: 16
+  lora_alpha: 32
+  learning_rate: 2.0e-4
+  num_train_epochs: 3
+
+evaluation:
+  target_json_validity: 1.00
+  target_grounded_rate: 0.90

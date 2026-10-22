@@ -11,9 +11,10 @@ infrastructure.
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -24,7 +25,7 @@ class _MemoryBackend:
     """Process-local store with TTL. Used for local dev and as a safety net."""
 
     def __init__(self) -> None:
-        self._data: Dict[str, tuple[float, Any]] = {}
+        self._data: dict[str, tuple[float, Any]] = {}
         self._lock = asyncio.Lock()
 
     def _alive(self, key: str) -> bool:
@@ -37,11 +38,11 @@ class _MemoryBackend:
             return False
         return True
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         async with self._lock:
             return self._data[key][1] if self._alive(key) else None
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         async with self._lock:
             expires_at = time.time() + ttl if ttl else 0.0
             self._data[key] = (expires_at, value)
@@ -52,18 +53,18 @@ class _MemoryBackend:
 
     async def list_push(self, key: str, value: Any, cap: int = 500) -> None:
         async with self._lock:
-            current: List[Any] = self._data[key][1] if self._alive(key) else []
+            current: list[Any] = self._data[key][1] if self._alive(key) else []
             current.append(value)
             if len(current) > cap:
                 current = current[-cap:]
             expires_at = time.time() + settings.kv_ttl_seconds
             self._data[key] = (expires_at, current)
 
-    async def list_all(self, key: str) -> List[Any]:
+    async def list_all(self, key: str) -> list[Any]:
         async with self._lock:
             return list(self._data[key][1]) if self._alive(key) else []
 
-    async def keys(self, prefix: str) -> List[str]:
+    async def keys(self, prefix: str) -> list[str]:
         async with self._lock:
             return [k for k in self._data if k.startswith(prefix) and self._alive(k)]
 
@@ -88,7 +89,7 @@ class _RedisRestBackend:
             response.raise_for_status()
             return response.json().get("result")
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         raw = await self._command("GET", key)
         if raw is None:
             return None
@@ -97,7 +98,7 @@ class _RedisRestBackend:
         except (TypeError, ValueError):
             return raw
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         encoded = json.dumps(value)
         if ttl:
             await self._command("SET", key, encoded, "EX", ttl)
@@ -112,7 +113,7 @@ class _RedisRestBackend:
         await self._command("LTRIM", key, -cap, -1)
         await self._command("EXPIRE", key, settings.kv_ttl_seconds)
 
-    async def list_all(self, key: str) -> List[Any]:
+    async def list_all(self, key: str) -> list[Any]:
         raw = await self._command("LRANGE", key, 0, -1) or []
         items = []
         for item in raw:
@@ -122,7 +123,7 @@ class _RedisRestBackend:
                 items.append(item)
         return items
 
-    async def keys(self, prefix: str) -> List[str]:
+    async def keys(self, prefix: str) -> list[str]:
         # SCAN rather than KEYS: KEYS blocks the server on large databases.
         cursor, found = "0", []
         for _ in range(20):  # bounded so a huge keyspace cannot hang a request
@@ -160,15 +161,15 @@ class Store:
         """
         try:
             return await coro_factory(self._backend)
-        except Exception:  # noqa: BLE001 - deliberate catch-all for resilience
+        except Exception:
             return await fallback_factory(self._fallback)
 
-    async def get(self, namespace: str, key: str) -> Optional[Any]:
+    async def get(self, namespace: str, key: str) -> Any | None:
         full = self._key(namespace, key)
         return await self._safe(lambda b: b.get(full), lambda b: b.get(full))
 
     async def set(
-        self, namespace: str, key: str, value: Any, ttl: Optional[int] = None
+        self, namespace: str, key: str, value: Any, ttl: int | None = None
     ) -> None:
         full = self._key(namespace, key)
         ttl = ttl if ttl is not None else settings.kv_ttl_seconds
@@ -187,11 +188,11 @@ class Store:
             lambda b: b.list_push(full, value, cap),
         )
 
-    async def list(self, namespace: str, key: str) -> List[Any]:
+    async def list(self, namespace: str, key: str) -> builtins.list[Any]:
         full = self._key(namespace, key)
         return await self._safe(lambda b: b.list_all(full), lambda b: b.list_all(full))
 
-    async def keys(self, namespace: str) -> List[str]:
+    async def keys(self, namespace: str) -> builtins.list[str]:
         prefix = f"{settings.kv_prefix}:{namespace}:"
         raw = await self._safe(lambda b: b.keys(prefix), lambda b: b.keys(prefix))
         return [k[len(prefix) :] for k in raw]

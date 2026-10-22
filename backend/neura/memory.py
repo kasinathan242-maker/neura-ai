@@ -24,7 +24,7 @@ import math
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
 
 import httpx
 
@@ -48,7 +48,7 @@ WEAK_THRESHOLD = 0.55
 # Chunking + similarity
 # --------------------------------------------------------------------------- #
 
-def chunk_text(text: str, target: int = CHUNK_TARGET_CHARS) -> List[str]:
+def chunk_text(text: str, target: int = CHUNK_TARGET_CHARS) -> list[str]:
     """Split on paragraph boundaries, packing up to ~``target`` characters.
 
     Paragraph-aware packing keeps related sentences together, which matters more
@@ -59,7 +59,7 @@ def chunk_text(text: str, target: int = CHUNK_TARGET_CHARS) -> List[str]:
         return []
 
     paragraphs = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
-    chunks: List[str] = []
+    chunks: list[str] = []
     buffer = ""
 
     for paragraph in paragraphs:
@@ -99,7 +99,7 @@ def cosine(a: Sequence[float], b: Sequence[float]) -> float:
 # Optional Neo4j mirror
 # --------------------------------------------------------------------------- #
 
-async def _neo4j_query(cypher: str, params: Optional[dict] = None) -> Optional[dict]:
+async def _neo4j_query(cypher: str, params: dict | None = None) -> dict | None:
     """Run Cypher over Neo4j's HTTP Query API.
 
     HTTP rather than Bolt keeps the ``neo4j`` driver out of requirements, which
@@ -127,7 +127,7 @@ async def _neo4j_query(cypher: str, params: Optional[dict] = None) -> Optional[d
                 logger.warning("neo4j %s: %s", response.status_code, response.text[:200])
                 return None
             return response.json()
-    except Exception as exc:  # noqa: BLE001 - graph mirror is best-effort
+    except Exception as exc:
         logger.info("neo4j unavailable (%s)", exc)
         return None
 
@@ -283,7 +283,7 @@ async def record_mastery(
     return concept
 
 
-async def neighbours(user_id: str, keys: Sequence[str], depth: int = 1) -> List[dict]:
+async def neighbours(user_id: str, keys: Sequence[str], depth: int = 1) -> list[dict]:
     """Concepts reachable from ``keys`` within ``depth`` hops (either direction)."""
     graph = await _load_graph(user_id)
     frontier = {k for k in keys if k in graph["concepts"]}
@@ -304,7 +304,7 @@ async def neighbours(user_id: str, keys: Sequence[str], depth: int = 1) -> List[
     return [graph["concepts"][k] for k in seen if k in graph["concepts"]]
 
 
-async def weak_concepts(user_id: str, limit: int = 6) -> List[dict]:
+async def weak_concepts(user_id: str, limit: int = 6) -> list[dict]:
     graph = await _load_graph(user_id)
     scored = [
         c
@@ -338,7 +338,7 @@ async def ingest(
     now = time.time()
     doc_id = uuid.uuid4().hex[:12]
 
-    for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
+    for index, (chunk, vector) in enumerate(zip(chunks, vectors, strict=False)):
         await store.push(
             CHUNKS,
             user_id,
@@ -353,7 +353,7 @@ async def ingest(
             cap=MAX_CHUNKS_PER_USER,
         )
 
-    concepts: List[dict] = []
+    concepts: list[dict] = []
     if extract_concepts:
         concepts = await _extract_concepts(text[:6000], source=source)
         if concepts:
@@ -371,7 +371,7 @@ async def ingest(
     }
 
 
-async def _extract_concepts(text: str, *, source: str) -> List[dict]:
+async def _extract_concepts(text: str, *, source: str) -> list[dict]:
     """Ask the model to name the concepts in a passage."""
     if not text.strip():
         return []
@@ -388,7 +388,7 @@ async def _extract_concepts(text: str, *, source: str) -> List[dict]:
     if not isinstance(raw, list):
         return []
 
-    concepts: List[dict] = []
+    concepts: list[dict] = []
     for item in raw[:7]:
         if not isinstance(item, dict):
             continue
@@ -406,13 +406,13 @@ async def _extract_concepts(text: str, *, source: str) -> List[dict]:
     return concepts
 
 
-def _infer_edges(concepts: Sequence[dict]) -> List[dict]:
+def _infer_edges(concepts: Sequence[dict]) -> list[dict]:
     """Link concepts that arrived together as ``co-occurs``.
 
     Co-occurrence in one document is weak evidence but it is real, and it makes
     the graph traversable immediately without a second model round-trip.
     """
-    edges: List[dict] = []
+    edges: list[dict] = []
     names = [c["name"] for c in concepts]
     for i, source in enumerate(names):
         for target in names[i + 1 :]:
@@ -426,7 +426,7 @@ def _infer_edges(concepts: Sequence[dict]) -> List[dict]:
     return edges[:20]
 
 
-async def search(user_id: str, query: str, *, k: int = 5) -> List[dict]:
+async def search(user_id: str, query: str, *, k: int = 5) -> list[dict]:
     """Rank stored chunks against ``query`` by cosine similarity."""
     chunks = await store.list(CHUNKS, user_id)
     if not chunks:
@@ -493,7 +493,7 @@ async def build_learner_context(user_id: str, question: str) -> dict:
     related = await neighbours(user_id, matched_keys, depth=1)
     weak = await weak_concepts(user_id, limit=5)
 
-    lines: List[str] = []
+    lines: list[str] = []
     if hits:
         lines.append("Material this learner has already studied:")
         for hit in hits:

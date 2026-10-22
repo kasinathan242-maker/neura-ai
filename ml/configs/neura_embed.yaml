@@ -1,0 +1,26 @@
+model:
+  name: "neura-embed-small-v1"
+  base_checkpoint: "intfloat/multilingual-e5-small"
+  license: "MIT"
+  embedding_dimension: 384
+  max_sequence_length: 512
+
+dataset:
+  train_path: "ml/data/processed/embed_train.jsonl"
+  val_path: "ml/data/processed/embed_val.jsonl"
+  sources:
+    - name: "miracl_multilingual"
+      license: "Apache-2.0"
+    - name: "ai4bharat_indicqa_tamil"
+      license: "MIT"
+
+training:
+  loss: "MultipleNegativesRankingLoss"
+  epochs: 4
+  batch_size: 32
+  learning_rate: 2.0e-5
+  warmup_steps: 100
+
+evaluation:
+  metric: "Recall@5"
+  target_delta_over_base: 5.0

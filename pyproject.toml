@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "RUF"]
+ignore = [
+    "B008",  # Allow FastAPI Depends(), Query(), File() in argument defaults
+    "E402",  # Allow sys.path manipulation before local imports in scripts/tests
+    "E501",  # Line length handled gracefully
+    "B904",  # Allow standard exception re-raise without explicit from err
+    "UP017", # Allow datetime.timezone.utc for wide Python compatibility
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "backend/tests"]

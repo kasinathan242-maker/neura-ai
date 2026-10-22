@@ -15,7 +15,7 @@ from pathlib import Path
 # Allow `python backend/server.py` from the repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from neura.main import app  # noqa: E402  (path setup must run first)
+from neura.main import app
 
 __all__ = ["app"]
 

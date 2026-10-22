@@ -1,0 +1,31 @@
+model:
+  name: "neura-sum-1.5b-v1"
+  base_checkpoint: "Qwen/Qwen2.5-1.5B-Instruct"
+  license: "Apache-2.0"
+
+dataset:
+  train_path: "ml/data/processed/sum_train.jsonl"
+  val_path: "ml/data/processed/sum_val.jsonl"
+  min_pairs: 1000
+  chunk_token_size: 1500
+  chunk_token_overlap: 150
+  sources:
+    - name: "scisummnet_papers_lectures"
+      license: "CC-BY-4.0"
+    - name: "arxiv_oa_engineering"
+      license: "CC-BY-4.0"
+
+training:
+  method: "LoRA"
+  lora_r: 16
+  lora_alpha: 32
+  max_seq_length: 2048
+  learning_rate: 1.5e-4
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+
+evaluation:
+  metric: "ROUGE-L"
+  target_threshold: 0.42
+  factual_consistency_min_rate: 0.95

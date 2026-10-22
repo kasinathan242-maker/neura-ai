@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 import math
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from . import llm
 
@@ -70,7 +71,7 @@ def _number(value: Any, default: float, low: float, high: float) -> float:
     return max(low, min(high, number))
 
 
-def _vec3(value: Any, default: Sequence[float], low: float, high: float) -> List[float]:
+def _vec3(value: Any, default: Sequence[float], low: float, high: float) -> list[float]:
     if isinstance(value, (list, tuple)) and len(value) >= 3:
         return [_number(value[i], float(default[i]), low, high) for i in range(3)]
     if isinstance(value, (int, float)):
@@ -101,7 +102,7 @@ def _slug(value: Any, fallback: str) -> str:
     return slug[:40] or fallback
 
 
-def validate(raw: Any, *, prompt: str = "") -> Dict[str, Any]:
+def validate(raw: Any, *, prompt: str = "") -> dict[str, Any]:
     """Coerce model output into a renderable scene. Always returns a valid scene."""
     if not isinstance(raw, dict):
         return fallback_scene(prompt)
@@ -112,13 +113,13 @@ def validate(raw: Any, *, prompt: str = "") -> Dict[str, Any]:
     return normalised
 
 
-def _normalise(raw: Dict[str, Any], *, prompt: str = "") -> Optional[Dict[str, Any]]:
+def _normalise(raw: dict[str, Any], *, prompt: str = "") -> dict[str, Any] | None:
     """Clamp and repair a scene dict. ``None`` when there is nothing renderable.
 
     Kept separate from :func:`validate` so :func:`fallback_scene` can reuse it
     without recursing back into the fallback path.
     """
-    objects: List[dict] = []
+    objects: list[dict] = []
     used_ids: set[str] = set()
 
     for index, item in enumerate(raw.get("objects") or []):
@@ -198,7 +199,7 @@ def _normalise(raw: Dict[str, Any], *, prompt: str = "") -> Optional[Dict[str, A
     }
 
 
-def fallback_scene(prompt: str, *, title: str = "") -> Dict[str, Any]:
+def fallback_scene(prompt: str, *, title: str = "") -> dict[str, Any]:
     """A meaningful scene when generation fails: a labelled hub and spokes."""
     topic = (title or prompt or "Concept").strip()[:60] or "Concept"
     objects = [
@@ -264,7 +265,7 @@ def fallback_scene(prompt: str, *, title: str = "") -> Dict[str, Any]:
     return scene
 
 
-async def generate(prompt: str, *, context: str = "") -> Dict[str, Any]:
+async def generate(prompt: str, *, context: str = "") -> dict[str, Any]:
     """Generate and validate a scene for ``prompt``."""
     if not prompt.strip():
         return fallback_scene("")

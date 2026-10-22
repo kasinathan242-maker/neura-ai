@@ -17,10 +17,9 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from neura.main import app  # noqa: E402
-from neura import scenes, tools  # noqa: E402
+from fastapi.testclient import TestClient
+from neura import scenes, tools
+from neura.main import app
 
 client = TestClient(app)
 
@@ -398,7 +397,7 @@ def test_vision_and_voice() -> None:
 def test_subject_extraction() -> None:
     """Regressions for bugs found while exercising the app in a browser."""
     section("Subject extraction")
-    from neura.llm import extract_subject  # noqa: PLC0415 - local to this suite
+    from neura.llm import extract_subject
 
     check(
         "a goal sentence yields the proper noun, not the whole sentence",
@@ -426,7 +425,7 @@ def test_subject_extraction() -> None:
     )
 
     # The offline role hint matched "vision" inside "revision notes".
-    from neura.llm import _offline_text  # noqa: PLC0415
+    from neura.llm import _offline_text
 
     researcher = _offline_text(
         [
@@ -478,7 +477,7 @@ def main() -> int:
     ):
         try:
             suite()
-        except Exception as exc:  # noqa: BLE001 - report and keep going
+        except Exception as exc:
             FAILED.append((suite.__name__, f"raised {type(exc).__name__}: {exc}"))
             print(f"  ERROR {suite.__name__}: {exc}")
 

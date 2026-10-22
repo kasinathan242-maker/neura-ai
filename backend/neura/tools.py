@@ -16,7 +16,7 @@ import re
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -32,7 +32,7 @@ _HEADERS = {"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"}
 # Web search
 # --------------------------------------------------------------------------- #
 
-async def _wikipedia_search(query: str, limit: int) -> List[dict]:
+async def _wikipedia_search(query: str, limit: int) -> list[dict]:
     """Wikipedia REST search: high-quality, keyless, generous rate limits."""
     url = "https://en.wikipedia.org/w/rest.php/v1/search/page"
     params = {"q": query, "limit": limit}
@@ -56,7 +56,7 @@ async def _wikipedia_search(query: str, limit: int) -> List[dict]:
     return results
 
 
-async def _duckduckgo_search(query: str, limit: int) -> List[dict]:
+async def _duckduckgo_search(query: str, limit: int) -> list[dict]:
     """DuckDuckGo's no-JS HTML endpoint, scraped defensively."""
     url = "https://html.duckduckgo.com/html/"
     async with httpx.AsyncClient(
@@ -66,7 +66,7 @@ async def _duckduckgo_search(query: str, limit: int) -> List[dict]:
         response.raise_for_status()
         body = response.text
 
-    results: List[dict] = []
+    results: list[dict] = []
     pattern = re.compile(
         r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>'
         r'(?:.*?class="[^"]*result__snippet[^"]*"[^>]*>(?P<snippet>.*?)</a>)?',
@@ -94,14 +94,14 @@ async def _duckduckgo_search(query: str, limit: int) -> List[dict]:
     return results
 
 
-async def web_search(query: str, limit: Optional[int] = None) -> Dict[str, Any]:
+async def web_search(query: str, limit: int | None = None) -> dict[str, Any]:
     """Search the open web. Wikipedia first, then DuckDuckGo to broaden."""
     limit = limit or settings.agent_search_results
     if not settings.enable_web_search:
         return {"ok": False, "error": "web search disabled by configuration", "results": []}
 
-    results: List[dict] = []
-    errors: List[str] = []
+    results: list[dict] = []
+    errors: list[str] = []
 
     for engine in (_wikipedia_search, _duckduckgo_search):
         if len(results) >= limit:
@@ -110,7 +110,7 @@ async def web_search(query: str, limit: Optional[int] = None) -> Dict[str, Any]:
             found = await engine(query, limit)
             seen = {r["url"] for r in results}
             results.extend(r for r in found if r["url"] not in seen)
-        except Exception as exc:  # noqa: BLE001 - one engine failing is fine
+        except Exception as exc:
             errors.append(f"{engine.__name__}: {exc}")
 
     return {
@@ -121,7 +121,7 @@ async def web_search(query: str, limit: Optional[int] = None) -> Dict[str, Any]:
     }
 
 
-async def find_documents(topic: str, limit: int = 4) -> Dict[str, Any]:
+async def find_documents(topic: str, limit: int = 4) -> dict[str, Any]:
     """Look for openly downloadable PDFs (lecture notes, papers) on a topic."""
     search = await web_search(f"{topic} lecture notes filetype:pdf", limit * 2)
     documents = [
@@ -144,7 +144,7 @@ _TAG_STRIP = re.compile(
 )
 
 
-async def fetch_page(url: str, max_chars: int = 6000) -> Dict[str, Any]:
+async def fetch_page(url: str, max_chars: int = 6000) -> dict[str, Any]:
     """Download a URL and return readable text (HTML or PDF)."""
     try:
         async with httpx.AsyncClient(
@@ -154,7 +154,7 @@ async def fetch_page(url: str, max_chars: int = 6000) -> Dict[str, Any]:
             response.raise_for_status()
             content_type = response.headers.get("content-type", "").lower()
             raw = response.content
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"ok": False, "url": url, "error": str(exc), "text": ""}
 
     if len(raw) > settings.max_upload_bytes:
@@ -182,7 +182,7 @@ async def fetch_page(url: str, max_chars: int = 6000) -> Dict[str, Any]:
     return {"ok": bool(text), "url": url, "kind": "html", "title": title, "text": text[:max_chars]}
 
 
-def extract_pdf_text(content: bytes) -> Dict[str, Any]:
+def extract_pdf_text(content: bytes) -> dict[str, Any]:
     """Extract text from PDF bytes.
 
     ``pypdf`` is imported lazily: the vision and chat routes do not need it, and
@@ -195,11 +195,11 @@ def extract_pdf_text(content: bytes) -> Dict[str, Any]:
 
     try:
         reader = PdfReader(BytesIO(content))
-        pages: List[str] = []
+        pages: list[str] = []
         for page in reader.pages:
             try:
                 pages.append(page.extract_text() or "")
-            except Exception:  # noqa: BLE001 - skip unparseable pages
+            except Exception:
                 pages.append("")
         text = "\n\n".join(p.strip() for p in pages if p.strip())
         if not text:
@@ -211,7 +211,7 @@ def extract_pdf_text(content: bytes) -> Dict[str, Any]:
                 "Try the Vision tab, which reads images.",
             }
         return {"ok": True, "text": text, "pages": len(reader.pages)}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"ok": False, "text": "", "pages": 0, "error": f"Could not parse PDF: {exc}"}
 
 
@@ -241,7 +241,7 @@ def _fold(line: str) -> str:
 
 
 def build_ics(
-    events: List[dict], *, calendar_name: str = "NEURA AI Study Plan"
+    events: list[dict], *, calendar_name: str = "NEURA AI Study Plan"
 ) -> str:
     """Build an RFC 5545 calendar the user can import into any calendar app.
 
@@ -298,12 +298,12 @@ def build_ics(
 
 
 def schedule_from_plan(
-    plan: List[dict],
+    plan: list[dict],
     *,
-    start_date: Optional[datetime] = None,
+    start_date: datetime | None = None,
     hour: int = 18,
     minute: int = 0,
-) -> List[dict]:
+) -> list[dict]:
     """Turn day-indexed plan entries into concrete datetimes.
 
     Days are placed relative to *tomorrow* by default, so a plan generated at
@@ -312,7 +312,7 @@ def schedule_from_plan(
     base = start_date or (datetime.now(timezone.utc) + timedelta(days=1))
     base = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-    events: List[dict] = []
+    events: list[dict] = []
     for index, day in enumerate(plan):
         day_number = int(day.get("day") or index + 1)
         start = base + timedelta(days=day_number - 1)

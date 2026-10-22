@@ -1,0 +1,26 @@
+model:
+  name: "neura-tts-piper-v1"
+  architecture: "VITS / Piper"
+  license: "MIT"
+  export_format: "ONNX"
+
+voices:
+  en_IN:
+    base_checkpoint: "en_US-lessac-medium"
+    sample_rate: 22050
+    audio_hours: 2.0
+    speaker: "Consenting in-house technical speaker"
+  ta_IN:
+    base_checkpoint: "ai4bharat_indic_tts_tamil"
+    sample_rate: 22050
+    license: "MIT"
+
+training:
+  batch_size: 16
+  learning_rate: 1.0e-4
+  epochs: 100
+  checkpoint_interval: 10
+
+evaluation:
+  streaming_latency_target_ms: 350
+  mos_target: 4.0

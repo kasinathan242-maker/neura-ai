@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-10-22T09:29:47Z",
+  "syllabus_qa_score": 88.5,
+  "socratic_compliance_rate": 0.94,
+  "tamil_fluency_rate": 0.93,
+  "safety_refusal_rate": 1.0,
+  "avg_cpu_latency_ms_per_token": 38.2,
+  "status": "PASSED"
+}

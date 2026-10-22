@@ -6,7 +6,7 @@ Validation lives here rather than in the routes so a malformed body returns a
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -18,18 +18,18 @@ class Turn(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
-    history: List[Turn] = Field(default_factory=list, max_length=40)
-    system: Optional[str] = Field(default=None, max_length=4000)
+    history: list[Turn] = Field(default_factory=list, max_length=40)
+    system: str | None = Field(default=None, max_length=4000)
     user_id: str = Field(default="local", max_length=64)
     use_memory: bool = True
-    provider: Optional[str] = None
+    provider: str | None = None
     mode: str = Field(default="chat", max_length=32)
 
 
 class TextRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     user_id: str = Field(default="local", max_length=64)
-    provider: Optional[str] = None
+    provider: str | None = None
 
 
 class CodeRequest(BaseModel):
@@ -41,7 +41,7 @@ class CodeRequest(BaseModel):
 
 class PdfChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
-    doc_id: Optional[str] = Field(default=None, max_length=64)
+    doc_id: str | None = Field(default=None, max_length=64)
     user_id: str = Field(default="local", max_length=64)
 
 
@@ -53,7 +53,7 @@ class ExplainRequest(BaseModel):
 
 class TutorRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    context: List[Turn] = Field(default_factory=list, max_length=30)
+    context: list[Turn] = Field(default_factory=list, max_length=30)
     user_id: str = Field(default="local", max_length=64)
 
 
@@ -112,10 +112,10 @@ class MasteryRequest(BaseModel):
 
 
 class ProfileRequest(BaseModel):
-    style: Optional[str] = Field(default=None, max_length=40)
-    level: Optional[str] = Field(default=None, max_length=40)
-    tone: Optional[str] = Field(default=None, max_length=40)
-    goals: Optional[List[str]] = None
+    style: str | None = Field(default=None, max_length=40)
+    level: str | None = Field(default=None, max_length=40)
+    tone: str | None = Field(default=None, max_length=40)
+    goals: list[str] | None = None
     user_id: str = Field(default="local", max_length=64)
 
 
@@ -127,7 +127,7 @@ class SceneRequest(BaseModel):
 
 class VoiceTurnRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=4000)
-    history: List[Turn] = Field(default_factory=list, max_length=20)
+    history: list[Turn] = Field(default_factory=list, max_length=20)
     user_id: str = Field(default="local", max_length=64)
     # Prosody features measured in the browser; drive the tutor's tone.
     energy: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -139,5 +139,5 @@ class VoiceTurnRequest(BaseModel):
 
 class ApiResponse(BaseModel):
     ok: bool = True
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    data: dict[str, Any] | None = None
+    error: str | None = None

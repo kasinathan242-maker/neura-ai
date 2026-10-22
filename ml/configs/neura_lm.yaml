@@ -1,0 +1,49 @@
+model:
+  name: "neura-lm-1.5b-v1"
+  base_checkpoint: "Qwen/Qwen2.5-1.5B-Instruct"
+  license: "Apache-2.0"
+  mobile_checkpoint: "Qwen/Qwen2.5-0.5B-Instruct"
+
+dataset:
+  train_path: "ml/data/processed/train.jsonl"
+  val_path: "ml/data/processed/val.jsonl"
+  test_path: "ml/data/processed/test.jsonl"
+  format: "chat_jsonl"
+  split_ratios: [0.90, 0.05, 0.05]
+  sources:
+    - name: "anna_university_regulation_2021_syllabus_qa"
+      license: "CC-BY-4.0"
+    - name: "ai4bharat_indic_instruct_tamil_english"
+      license: "MIT"
+    - name: "open_orca_socratic_filtered"
+      license: "MIT"
+    - name: "beavertails_academic_safety_subset"
+      license: "Apache-2.0"
+
+training:
+  method: "QLoRA"
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  max_seq_length: 2048
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  num_train_epochs: 3
+  fp16: false
+  bf16: true
+  optim: "adamw_8bit"
+  seed: 42
+  logging_steps: 10
+  save_strategy: "epoch"
+  evaluation_strategy: "epoch"
+  mlflow_tracking_uri: "./mlruns"
+
+export:
+  target_format: "GGUF"
+  quantization: "Q4_K_M"
+  output_dir: "models/exported"

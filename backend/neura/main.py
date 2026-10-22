@@ -17,7 +17,7 @@ import logging
 import re
 import time
 import uuid
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Body, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -103,14 +103,14 @@ def sse(events: AsyncIterator[dict]) -> StreamingResponse:
     async def framed() -> AsyncIterator[bytes]:
         try:
             async for event in events:
-                yield f"data: {json.dumps(event)}\n\n".encode("utf-8")
+                yield f"data: {json.dumps(event)}\n\n".encode()
         except asyncio.CancelledError:
             # Client navigated away or aborted (barge-in); nothing to report.
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("stream failed")
             payload = {"type": "error", "message": str(exc)}
-            yield f"data: {json.dumps(payload)}\n\n".encode("utf-8")
+            yield f"data: {json.dumps(payload)}\n\n".encode()
             yield b'data: {"type": "done"}\n\n'
 
     return StreamingResponse(
@@ -164,7 +164,7 @@ async def _chat_system(request: ChatRequest) -> tuple[str, dict]:
                     "weak point only when it is genuinely relevant to the "
                     "current question -- do not shoehorn it in."
                 )
-        except Exception as exc:  # noqa: BLE001 - memory must never break chat
+        except Exception as exc:
             logger.info("memory context unavailable: %s", exc)
 
     return base, context
@@ -212,7 +212,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             "related": context.get("related", []),
         }
 
-        collected: List[str] = []
+        collected: list[str] = []
         async for event in llm.stream(
             request.message,
             system=system,
@@ -243,7 +243,7 @@ async def _remember_exchange(request: ChatRequest, answer: str) -> None:
             # substantive exchanges, not "thanks" or "ok".
             extract_concepts=len(request.message) > 40,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info("could not persist exchange: %s", exc)
 
 
@@ -339,14 +339,14 @@ async def upload_pdf(
         },
     )
 
-    concepts: List[str] = []
+    concepts: list[str] = []
     if ingest_to_memory:
         try:
             result = await memory.ingest(
                 user_id, text, source=f"pdf:{doc_id}", title=file.filename or "document.pdf"
             )
             concepts = result.get("concepts", [])
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.info("pdf memory ingest skipped: %s", exc)
 
     return {
@@ -448,13 +448,13 @@ async def vision_analyze(
 
     completion = await llm.complete(question, system=prompts.VISION, images=[content])
 
-    scene: Optional[dict] = None
+    scene: dict | None = None
     if want_scene and completion.text and not completion.degraded:
         try:
             scene = await scenes.generate(
                 prompt or "the subject of this image", context=completion.text[:1200]
             )
-        except Exception as exc:  # noqa: BLE001 - the answer still stands alone
+        except Exception as exc:
             logger.info("scene generation from image failed: %s", exc)
 
     if completion.text and not completion.degraded:
@@ -466,7 +466,7 @@ async def vision_analyze(
                 title=prompt[:80] or f"Camera capture ({mode})",
                 extract_concepts=True,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.info("vision memory ingest skipped: %s", exc)
 
     return {
@@ -624,7 +624,7 @@ async def suggest_tasks(request: TaskGoalRequest) -> dict:
     )
 
     raw = parsed.get("tasks") if isinstance(parsed, dict) else None
-    tasks: List[dict] = []
+    tasks: list[dict] = []
     if isinstance(raw, list):
         for item in raw[:6]:
             if isinstance(item, dict) and str(item.get("text") or "").strip():
@@ -905,7 +905,7 @@ async def voice_turn(request: VoiceTurnRequest) -> StreamingResponse:
             "memory_used": context.get("has_memory", False),
             "weak_concepts": [c["name"] for c in context.get("weak", [])],
         }
-        collected: List[str] = []
+        collected: list[str] = []
         async for event in llm.stream(
             request.transcript,
             system=system,

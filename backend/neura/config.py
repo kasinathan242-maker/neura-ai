@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import List
 
 
 def _env(*names: str, default: str = "") -> str:
@@ -117,7 +116,7 @@ class Settings:
 
         # --- CORS -------------------------------------------------------------
         raw_origins = _env("CORS_ORIGINS", default="")
-        self.cors_origins: List[str] = (
+        self.cors_origins: list[str] = (
             [o.strip() for o in raw_origins.split(",") if o.strip()]
             if raw_origins
             else []

@@ -1,0 +1,27 @@
+model:
+  name: "neura-stt-whisper-small-v1"
+  base_checkpoint: "openai/whisper-small"
+  license: "MIT"
+  export_runtime: "CTranslate2"
+
+dataset:
+  train_manifest: "ml/data/processed/stt_train.json"
+  val_manifest: "ml/data/processed/stt_val.json"
+  sources:
+    - name: "mozilla_common_voice_tamil"
+      license: "CC0"
+    - name: "ai4bharat_shrutinw_tamil"
+      license: "MIT"
+    - name: "indian_english_accent_corpus"
+      license: "CC-BY-4.0"
+
+training:
+  epochs: 3
+  learning_rate: 1.0e-5
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 2
+  warmup_steps: 500
+
+evaluation:
+  wer_indian_english_target: 12.0
+  wer_tamil_target: 16.0

@@ -28,8 +28,8 @@ import random
 import re
 import time
 import zlib
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Dict, List, Optional, Sequence
 
 import httpx
 
@@ -37,7 +37,7 @@ from .config import settings
 
 logger = logging.getLogger("neura.llm")
 
-Message = Dict[str, object]
+Message = dict[str, object]
 
 
 class LLMError(RuntimeError):
@@ -50,14 +50,14 @@ class Completion:
     provider: str
     model: str
     degraded: bool = False
-    notes: List[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
 # Provider probing
 # --------------------------------------------------------------------------- #
 
-_probe_cache: Dict[str, tuple[float, bool]] = {}
+_probe_cache: dict[str, tuple[float, bool]] = {}
 _PROBE_TTL = 30.0
 
 
@@ -77,14 +77,14 @@ async def _ollama_available() -> bool:
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(f"{settings.ollama_host}/api/tags")
             ok = response.status_code == 200
-    except Exception:  # noqa: BLE001 - unreachable Ollama is an expected state
+    except Exception:
         ok = False
 
     _probe_cache["ollama"] = (now, ok)
     return ok
 
 
-async def resolve_provider(explicit: Optional[str] = None) -> str:
+async def resolve_provider(explicit: str | None = None) -> str:
     choice = (explicit or settings.llm_provider or "auto").lower()
 
     if choice in {"ollama", "local"}:
@@ -122,11 +122,11 @@ def build_messages(
     prompt: str,
     *,
     system: str = "",
-    history: Optional[Sequence[Message]] = None,
-    images: Optional[Sequence[bytes]] = None,
-) -> List[Message]:
+    history: Sequence[Message] | None = None,
+    images: Sequence[bytes] | None = None,
+) -> list[Message]:
     """Normalise a prompt into the chat-message shape both providers accept."""
-    messages: List[Message] = []
+    messages: list[Message] = []
     if system:
         messages.append({"role": "system", "content": system})
 
@@ -148,10 +148,10 @@ def build_messages(
     return messages
 
 
-def _split_images(messages: Sequence[Message]) -> tuple[List[Message], List[bytes]]:
+def _split_images(messages: Sequence[Message]) -> tuple[list[Message], list[bytes]]:
     """Pull the private ``_images`` payload back out so providers can encode it."""
-    cleaned: List[Message] = []
-    images: List[bytes] = []
+    cleaned: list[Message] = []
+    images: list[bytes] = []
     for message in messages:
         copy = dict(message)
         found = copy.pop("_images", None)
@@ -233,8 +233,8 @@ async def _ollama_stream(
                     break
 
 
-async def _ollama_embed(texts: Sequence[str], model: str) -> List[List[float]]:
-    vectors: List[List[float]] = []
+async def _ollama_embed(texts: Sequence[str], model: str) -> list[list[float]]:
+    vectors: list[list[float]] = []
     async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
         for text in texts:
             response = await client.post(
@@ -259,7 +259,7 @@ def _openai_payload(
         # The vision format is a content array of typed parts.
         for message in reversed(cleaned):
             if message.get("role") == "user":
-                parts: List[dict] = [
+                parts: list[dict] = [
                     {"type": "text", "text": str(message.get("content", ""))}
                 ]
                 for blob in images:
@@ -350,7 +350,7 @@ async def _openai_stream(
                         yield piece
 
 
-async def _openai_embed(texts: Sequence[str], model: str) -> List[List[float]]:
+async def _openai_embed(texts: Sequence[str], model: str) -> list[list[float]]:
     async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
         response = await client.post(
             f"{settings.llm_base_url}/embeddings",
@@ -397,8 +397,7 @@ _STOPWORDS = {
     "got", "get", "coming", "up", "soon", "need", "want", "study", "studying",
     "learn", "learning", "revise", "revision", "prepare", "preparing", "am",
     "write", "short", "warm", "kickoff", "briefing", "max", "words", "summarise",
-    "summarize", "student", "must", "understand", "points", "bullet", "using",
-    # Instruction verbs and schema nouns that lead internal prompts; never the
+    "summarize", "student", "must", "understand", "points", "bullet", # Instruction verbs and schema nouns that lead internal prompts; never the
     # subject being asked about.
     "respond", "return", "identify", "build", "split", "solve", "describe",
     "transcribe", "convert", "optimise", "optimize", "concept", "concepts",
@@ -425,7 +424,7 @@ def extract_subject(text: str) -> str:
     # quote to be followed by a non-letter, or a possessive truncates the match:
     # 'Newton's laws of motion' would otherwise yield just "Newton".
     quoted = re.findall(r'["“”]([^"“”]{3,80})["“”]', without_schema)
-    quoted += re.findall(r"(?<![A-Za-z])['‘]([^'‘’]{3,80}(?:['’][a-z]+[^'‘’]{0,40})*)['’](?![A-Za-z])",
+    quoted += re.findall(r"(?<![A-Za-z])['\u2018]([^'\u2018\u2019]{3,80}(?:['\u2019][a-z]+[^'\u2018\u2019]{0,40})*)['\u2019](?![A-Za-z])",
                          without_schema)
 
     for candidate in quoted:
@@ -444,8 +443,8 @@ def extract_subject(text: str) -> str:
 
     # Capitalised runs, ignoring a sentence-initial capital.
     words = cleaned.split()
-    runs: List[List[str]] = []
-    current: List[str] = []
+    runs: list[list[str]] = []
+    current: list[str] = []
     for index, word in enumerate(words):
         is_proper = word[:1].isupper() and (index > 0 or word.lower() not in _STOPWORDS)
         if is_proper and word.lower() not in _STOPWORDS:
@@ -609,7 +608,7 @@ def _stable_hash(value: str) -> int:
     return zlib.crc32(value.encode("utf-8"))
 
 
-def _hash_embedding(text: str, dimensions: int = 384) -> List[float]:
+def _hash_embedding(text: str, dimensions: int = 384) -> list[float]:
     """Deterministic bag-of-features embedding.
 
     Not semantic, but stable and normalised, so cosine similarity still ranks
@@ -642,16 +641,16 @@ async def complete(
     prompt: str,
     *,
     system: str = "",
-    history: Optional[Sequence[Message]] = None,
-    images: Optional[Sequence[bytes]] = None,
+    history: Sequence[Message] | None = None,
+    images: Sequence[bytes] | None = None,
     json_mode: bool = False,
-    provider: Optional[str] = None,
+    provider: str | None = None,
 ) -> Completion:
     """One-shot completion. Never raises: falls back to the offline engine."""
     messages = build_messages(prompt, system=system, history=history, images=images)
     chosen = await resolve_provider(provider)
     vision = bool(images)
-    notes: List[str] = []
+    notes: list[str] = []
 
     if chosen != "offline":
         model = model_for(chosen, vision=vision)
@@ -663,7 +662,7 @@ async def complete(
             if text:
                 return Completion(text=text, provider=chosen, model=model)
             notes.append(f"{chosen} returned an empty response")
-        except Exception as exc:  # noqa: BLE001 - degrade instead of 500
+        except Exception as exc:
             logger.warning("provider %s failed: %s", chosen, exc)
             notes.append(f"{chosen} failed: {exc}")
 
@@ -677,10 +676,10 @@ async def stream(
     prompt: str,
     *,
     system: str = "",
-    history: Optional[Sequence[Message]] = None,
-    images: Optional[Sequence[bytes]] = None,
+    history: Sequence[Message] | None = None,
+    images: Sequence[bytes] | None = None,
     json_mode: bool = False,
-    provider: Optional[str] = None,
+    provider: str | None = None,
 ) -> AsyncIterator[dict]:
     """Yield ``{"type": ...}`` events: ``meta``, ``delta``, ``error``, ``done``.
 
@@ -708,7 +707,7 @@ async def stream(
             if emitted:
                 yield {"type": "done", "provider": chosen, "model": model}
                 return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("stream via %s failed: %s", chosen, exc)
             if emitted:
                 # Partial answer already on screen; report and stop rather than
@@ -724,7 +723,7 @@ async def stream(
     yield {"type": "done", "provider": "offline", "model": "neura-offline", "degraded": True}
 
 
-async def embed(texts: Sequence[str], *, provider: Optional[str] = None) -> List[List[float]]:
+async def embed(texts: Sequence[str], *, provider: str | None = None) -> list[list[float]]:
     """Embed texts, degrading to the deterministic hash embedding."""
     if not texts:
         return []
@@ -738,12 +737,12 @@ async def embed(texts: Sequence[str], *, provider: Optional[str] = None) -> List
                 vectors = await _openai_embed(texts, model)
             if vectors and all(vectors):
                 return vectors
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.info("embeddings via %s unavailable (%s); using hash vectors", chosen, exc)
     return [_hash_embedding(text) for text in texts]
 
 
-def parse_json(text: str) -> Optional[object]:
+def parse_json(text: str) -> object | None:
     """Best-effort JSON extraction from model output.
 
     Models wrap JSON in prose or fences even when told not to, so try the whole
@@ -777,8 +776,8 @@ async def complete_json(
     prompt: str,
     *,
     system: str = "",
-    fallback: Optional[object] = None,
-    provider: Optional[str] = None,
+    fallback: object | None = None,
+    provider: str | None = None,
 ) -> tuple[object, Completion]:
     """Completion that is guaranteed to hand back a parsed object.
 

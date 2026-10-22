@@ -31,7 +31,7 @@ import logging
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Optional
+from typing import Any
 
 from . import llm, memory, tools
 from .config import settings
@@ -78,7 +78,7 @@ def _new_job(user_id: str, goal: str, days: int, minutes_per_day: int) -> dict:
     }
 
 
-def _initial_steps() -> List[dict]:
+def _initial_steps() -> list[dict]:
     """The fixed opening pipeline.
 
     Research and quiz steps are appended dynamically once the Architect knows how
@@ -90,7 +90,7 @@ def _initial_steps() -> List[dict]:
     ]
 
 
-def _step(agent: str, action: str, label: str, payload: Optional[dict] = None) -> dict:
+def _step(agent: str, action: str, label: str, payload: dict | None = None) -> dict:
     return {
         "agent": agent,
         "action": action,
@@ -109,7 +109,7 @@ async def save(job: dict) -> None:
     await store.set(JOBS, job["id"], job)
 
 
-async def load(job_id: str) -> Optional[dict]:
+async def load(job_id: str) -> dict | None:
     job = await store.get(JOBS, job_id)
     return job if isinstance(job, dict) else None
 
@@ -125,9 +125,9 @@ async def create(
     return job
 
 
-async def list_jobs(user_id: str) -> List[dict]:
+async def list_jobs(user_id: str) -> list[dict]:
     index = await store.list(JOB_INDEX, user_id)
-    jobs: List[dict] = []
+    jobs: list[dict] = []
     for entry in reversed(index):
         job = await load(str(entry.get("id")))
         if job:
@@ -194,7 +194,7 @@ async def _do_decompose(job: dict, step: dict) -> None:
     subject = str(parsed.get("subject") or goal)[:120] if isinstance(parsed, dict) else goal
     raw_subtopics = parsed.get("subtopics") if isinstance(parsed, dict) else None
 
-    subtopics: List[dict] = []
+    subtopics: list[dict] = []
     if isinstance(raw_subtopics, list):
         for item in raw_subtopics[:MAX_SUBTOPICS]:
             if isinstance(item, dict) and str(item.get("name") or "").strip():
@@ -283,7 +283,7 @@ async def _do_research(job: dict, step: dict) -> None:
                 source=f"agent:{job['id']}",
                 title=f"{subject} — {subtopic}",
             )
-        except Exception as exc:  # noqa: BLE001 - memory is an enhancement
+        except Exception as exc:
             logger.info("memory ingest skipped: %s", exc)
 
 
@@ -306,7 +306,7 @@ async def _do_documents(job: dict, step: dict) -> None:
                         source=f"agent-doc:{job['id']}",
                         title=document.get("title") or document["url"],
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.info("document ingest skipped: %s", exc)
                 break
 
@@ -347,7 +347,7 @@ async def _do_plan(job: dict, step: dict) -> None:
     )
 
     raw_plan = parsed.get("plan") if isinstance(parsed, dict) else None
-    plan: List[dict] = []
+    plan: list[dict] = []
     if isinstance(raw_plan, list):
         for index, item in enumerate(raw_plan[: job["days"]]):
             if not isinstance(item, dict):
@@ -374,14 +374,14 @@ async def _do_plan(job: dict, step: dict) -> None:
         job["artifacts"]["plan_degraded"] = True
 
 
-def _fallback_plan(subject: str, subtopics: List[str], days: int, minutes: int) -> List[dict]:
+def _fallback_plan(subject: str, subtopics: list[str], days: int, minutes: int) -> list[dict]:
     """Round-robin subtopics across the available days.
 
     Used when no model is configured. It is a genuinely usable plan, not filler:
     every subtopic gets covered and the last day is reserved for review.
     """
     pool = subtopics or [subject]
-    plan: List[dict] = []
+    plan: list[dict] = []
     for day in range(1, days + 1):
         if day == days and days > 1:
             plan.append(
@@ -424,7 +424,7 @@ async def _do_schedule(job: dict, step: dict) -> None:
     job["artifacts"]["events"] = events
 
     # Notification times: a nudge at the session start, a quiz prompt afterwards.
-    notifications: List[dict] = []
+    notifications: list[dict] = []
     for event in events:
         try:
             start = datetime.fromisoformat(event["start"])
@@ -460,7 +460,7 @@ async def _do_schedule(job: dict, step: dict) -> None:
 
 async def _do_quizzes(job: dict, step: dict) -> None:
     plan = job["artifacts"].get("plan", [])[:MAX_QUIZ_DAYS]
-    quizzes: List[dict] = []
+    quizzes: list[dict] = []
 
     for entry in plan:
         topics = ", ".join(entry.get("topics") or [entry.get("focus", "")])
@@ -487,13 +487,13 @@ async def _do_quizzes(job: dict, step: dict) -> None:
     _trace(job, step["agent"], f"Wrote {total} questions across {len(quizzes)} days.")
 
 
-def normalise_questions(raw: Any, topic: str) -> List[dict]:
+def normalise_questions(raw: Any, topic: str) -> list[dict]:
     """Coerce model output into the exact shape the quiz UI expects.
 
     Guarantees the answer is present in the options list -- otherwise the UI can
     never mark a response correct, which is a silent, confusing failure.
     """
-    questions: List[dict] = []
+    questions: list[dict] = []
     if isinstance(raw, list):
         for index, item in enumerate(raw[:5]):
             if not isinstance(item, dict):
@@ -570,7 +570,7 @@ _HANDLERS = {
 # Driver
 # --------------------------------------------------------------------------- #
 
-async def advance(job_id: str) -> Optional[dict]:
+async def advance(job_id: str) -> dict | None:
     """Execute the next pending step and persist the result.
 
     One step per call keeps every request short enough for a serverless timeout.
@@ -611,7 +611,7 @@ async def advance(job_id: str) -> Optional[dict]:
         try:
             await handler(job, step)
             step["status"] = "done"
-        except Exception as exc:  # noqa: BLE001 - one bad step must not kill the job
+        except Exception as exc:
             logger.exception("agent step failed: %s", step)
             step["status"] = "failed"
             step["error"] = str(exc)[:300]
@@ -632,7 +632,7 @@ async def advance(job_id: str) -> Optional[dict]:
     return job
 
 
-async def calendar_for(job_id: str) -> Optional[str]:
+async def calendar_for(job_id: str) -> str | None:
     job = await load(job_id)
     if job is None:
         return None
@@ -660,7 +660,7 @@ async def submit_quiz_result(
         None,
     )
     score = (correct / total) if total else 0.0
-    updated: List[dict] = []
+    updated: list[dict] = []
 
     concepts = (quiz.get("concepts") if quiz else []) or []
     if not concepts and quiz and quiz.get("topic"):
@@ -677,7 +677,7 @@ async def submit_quiz_result(
     return {"ok": True, "score": round(score, 3), "mastery_updated": updated}
 
 
-def next_notification(job: dict, *, now: Optional[datetime] = None) -> Optional[dict]:
+def next_notification(job: dict, *, now: datetime | None = None) -> dict | None:
     """The soonest future notification, for the client's scheduler."""
     now = now or datetime.now(timezone.utc)
     upcoming = []
