@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Tests-125%2F125%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/Code%20Style-Ruff%20Clean-000000?style=flat-square" alt="Ruff" />
-  <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square" alt="License" />
+  <img src="https://img.shields.io/badge/License-Copyright%20%C2%A9%20Kasinathan-red?style=flat-square" alt="License" />
 </p>
 
 ---
@@ -209,6 +209,10 @@ npm run build
 
 ---
 
-## 📜 License
+## 📜 License & Ownership
 
-This project is licensed under the **Apache License 2.0**. All underlying open-source checkpoints (`Qwen2.5`, `E5-small`, `Whisper`, `Piper ONNX`) conform to commercial and educational open-source permissions.
+**Copyright © 2026 Kasinathan ([@Kasinathan006](https://github.com/Kasinathan006)). All Rights Reserved.**
+
+This software, source code, architecture, algorithms, and associated assets are proprietary and the exclusive intellectual property of **Kasinathan**.
+
+Unauthorized copying, modification, reproduction, distribution, sublicensing, reverse engineering, or commercial exploitation of any portion of this project without explicit prior written authorization from the copyright owner is strictly prohibited.
